@@ -15,6 +15,7 @@ squashfs-root/
 __pycache__/
 _done/
 *.bak/
+_bak/
 third_party/
 software/iyagi53dos/
 software/iyagi43dos.zip
