@@ -1,0 +1,354 @@
+name: Build IYAGI Packages (Gitea)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "vt*"
+
+env:
+  DOSBOX_VERSION: "0.82.2"
+
+jobs:
+  build-linux-appimage:
+    name: Linux AppImage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install Python deps
+        run: python -m pip install --upgrade pillow
+
+      - name: Build AppImage
+        run: bash tools/build-linux.sh
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-package
+          path: dist/IYAGI-linux-x86_64.AppImage
+          if-no-files-found: error
+
+  build-windows-installer:
+    name: Windows Installer
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install Python deps
+        run: python -m pip install --upgrade pillow
+
+      - name: Resolve IYAGI source directory
+        shell: pwsh
+        run: |
+          if (Test-Path "app/I.EXE") {
+            "IYAGI_SOURCE_DIR=app" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } elseif (Test-Path "software/iyagi53dos/IYAGI/I.EXE") {
+            "IYAGI_SOURCE_DIR=software/iyagi53dos/IYAGI" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } else {
+            throw "Could not find IYAGI files in app/ or software/iyagi53dos/IYAGI/"
+          }
+
+      - name: Build bridge (Windows)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path ".build/windows" -Force | Out-Null
+          Push-Location bridge
+          go run ./cmd/embed-sounds
+          go build -ldflags="-s -w" -o "../.build/windows/bridge.exe" .
+          Pop-Location
+
+      - name: Download DOSBox-Staging (Windows)
+        shell: pwsh
+        run: |
+          $url = "https://github.com/dosbox-staging/dosbox-staging/releases/download/v${{ env.DOSBOX_VERSION }}/dosbox-staging-windows-x64-v${{ env.DOSBOX_VERSION }}.zip"
+          Invoke-WebRequest -Uri $url -OutFile ".build/windows/dosbox.zip"
+          Expand-Archive ".build/windows/dosbox.zip" -DestinationPath ".build/windows/dosbox" -Force
+
+      - name: Download PuTTY tools
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://the.earth.li/~sgtatham/putty/latest/w64/plink.exe" -OutFile ".build/windows/plink.exe"
+          Invoke-WebRequest -Uri "https://the.earth.li/~sgtatham/putty/latest/w64/puttygen.exe" -OutFile ".build/windows/puttygen.exe"
+
+      - name: Assemble Windows package tree
+        shell: pwsh
+        run: |
+          $pkg = "dist/win/IYAGI"
+          New-Item -ItemType Directory -Path "$pkg/bin","$pkg/app","$pkg/downloads","$pkg/keys" -Force | Out-Null
+
+          $dosboxExe = Get-ChildItem -Path ".build/windows/dosbox" -Recurse -Filter "dosbox.exe" | Select-Object -First 1
+          if (-not $dosboxExe) { throw "dosbox.exe not found in DOSBox-Staging archive" }
+          Copy-Item $dosboxExe.FullName "$pkg/bin/dosbox.exe" -Force
+
+          Copy-Item ".build/windows/bridge.exe" "$pkg/bin/bridge.exe" -Force
+          Copy-Item ".build/windows/plink.exe" "$pkg/bin/plink.exe" -Force
+          Copy-Item ".build/windows/puttygen.exe" "$pkg/bin/puttygen.exe" -Force
+
+          Copy-Item "$env:IYAGI_SOURCE_DIR/*" "$pkg/app/" -Recurse -Force
+          Copy-Item "resources/common/dosbox.conf" "$pkg/dosbox.conf" -Force
+          Copy-Item "resources/common/.env.example" "$pkg/.env.example" -Force
+          Copy-Item "resources/windows/launch.bat" "$pkg/launch.bat" -Force
+
+      - name: Convert icon (webp to ico)
+        run: |
+          python - << 'PYEOF'
+          from PIL import Image
+          src = "resources/iyagi-icon.webp"
+          dst = "dist/win/IYAGI/iyagi.ico"
+          im = Image.open(src).convert("RGBA")
+          im.save(dst, format="ICO", sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
+          PYEOF
+
+      - name: Patch IYAGI config
+        run: python scripts/configure_iyagi.py dist/win/IYAGI/app
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Write Inno Setup script
+        shell: pwsh
+        run: |
+          $iss = @'
+          #define MyAppName "IYAGI Terminal"
+          #define MyAppVersion GetEnv("IYAGI_VERSION")
+          [Setup]
+          AppId={{68A1B102-9456-4B84-A703-9C17B1417D2A}
+          AppName={#MyAppName}
+          AppVersion={#MyAppVersion}
+          DefaultDirName={autopf}\IYAGI Terminal
+          DefaultGroupName=IYAGI Terminal
+          DisableProgramGroupPage=yes
+          Compression=lzma
+          SolidCompression=yes
+          WizardStyle=modern
+          OutputDir=dist/win
+          OutputBaseFilename=IYAGI-windows-installer
+          PrivilegesRequired=lowest
+          SetupIconFile=dist\win\IYAGI\iyagi.ico
+          UninstallDisplayIcon={app}\iyagi.ico
+
+          [Files]
+          Source: "dist\win\IYAGI\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+          [Icons]
+          Name: "{autoprograms}\IYAGI Terminal"; Filename: "{app}\launch.bat"; IconFilename: "{app}\iyagi.ico"
+          Name: "{autodesktop}\IYAGI Terminal"; Filename: "{app}\launch.bat"; IconFilename: "{app}\iyagi.ico"
+
+          [Run]
+          Filename: "{app}\launch.bat"; Description: "Launch IYAGI Terminal"; Flags: nowait postinstall skipifsilent
+          '@
+          New-Item -ItemType Directory -Path ".build/windows" -Force | Out-Null
+          Set-Content -Path ".build/windows/iyagi.iss" -Value $iss
+
+      - name: Build installer
+        shell: pwsh
+        env:
+          IYAGI_VERSION: ${{ github.ref_name }}
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" ".build/windows/iyagi.iss"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-package
+          path: dist/win/IYAGI-windows-installer.exe
+          if-no-files-found: error
+
+  build-macos-dmg:
+    name: macOS DMG
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install Python deps
+        run: python3 -m pip install --upgrade pillow
+
+      - name: Resolve IYAGI source directory
+        run: |
+          if [ -f "app/I.EXE" ]; then
+            echo "IYAGI_SOURCE_DIR=app" >> "$GITHUB_ENV"
+          elif [ -f "software/iyagi53dos/IYAGI/I.EXE" ]; then
+            echo "IYAGI_SOURCE_DIR=software/iyagi53dos/IYAGI" >> "$GITHUB_ENV"
+          else
+            echo "Could not find IYAGI files in app/ or software/iyagi53dos/IYAGI/" >&2
+            exit 1
+          fi
+
+      - name: Build bridge (universal)
+        run: |
+          mkdir -p .build/macos
+          (
+            cd bridge
+            go run ./cmd/embed-sounds
+            GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o ../.build/macos/bridge-amd64 .
+            GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o ../.build/macos/bridge-arm64 .
+          )
+          lipo -create -output .build/macos/bridge .build/macos/bridge-amd64 .build/macos/bridge-arm64
+
+      - name: Download DOSBox-Staging (macOS)
+        run: |
+          mkdir -p .build/macos
+          curl -L "https://github.com/dosbox-staging/dosbox-staging/releases/download/v${DOSBOX_VERSION}/dosbox-staging-macOS-v${DOSBOX_VERSION}.dmg" -o .build/macos/dosbox.dmg
+          mkdir -p .build/macos/dosbox-mnt .build/macos/dosbox
+          hdiutil attach .build/macos/dosbox.dmg -nobrowse -readonly -mountpoint .build/macos/dosbox-mnt
+          APP_PATH="$(find .build/macos/dosbox-mnt -maxdepth 2 -name '*.app' | head -1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "Could not find DOSBox app inside DMG" >&2
+            hdiutil detach .build/macos/dosbox-mnt || true
+            exit 1
+          fi
+          cp -R "$APP_PATH" .build/macos/dosbox/
+          hdiutil detach .build/macos/dosbox-mnt
+
+      - name: Locate DOSBox binary
+        run: |
+          python3 - << 'PYEOF'
+          from pathlib import Path
+
+          root = Path(".build/macos/dosbox")
+          candidates = []
+          for p in root.rglob("*"):
+              if p.is_file() and p.name in ("dosbox", "DOSBox") and "Contents/MacOS" in str(p):
+                  candidates.append(p)
+          if not candidates:
+              raise SystemExit("Could not find DOSBox binary in extracted macOS archive")
+          candidates.sort(key=lambda p: len(str(p)))
+          Path(".build/macos/dosbox-bin.txt").write_text(str(candidates[0]))
+          print(candidates[0])
+          PYEOF
+
+      - name: Assemble .app bundle
+        run: |
+          APP="dist/IYAGI.app/Contents"
+          mkdir -p "$APP/MacOS" "$APP/Resources/app" "$APP/Resources/downloads"
+
+          DOSBOX_BIN="$(cat .build/macos/dosbox-bin.txt)"
+          cp "$DOSBOX_BIN" "$APP/MacOS/dosbox"
+          chmod +x "$APP/MacOS/dosbox"
+
+          cp .build/macos/bridge "$APP/MacOS/bridge"
+          chmod +x "$APP/MacOS/bridge"
+
+          cp resources/macos/launcher "$APP/MacOS/launcher"
+          chmod +x "$APP/MacOS/launcher"
+
+          cp -R "$IYAGI_SOURCE_DIR/." "$APP/Resources/app/"
+          cp resources/common/dosbox.conf "$APP/Resources/dosbox.conf"
+          cp resources/common/.env.example "$APP/Resources/.env.example"
+
+      - name: Convert icon (webp to icns)
+        run: |
+          python3 - << 'PYEOF'
+          from pathlib import Path
+          from PIL import Image
+
+          src = Path("resources/iyagi-icon.webp")
+          iconset = Path(".build/macos/iyagi.iconset")
+          iconset.mkdir(parents=True, exist_ok=True)
+          im = Image.open(src).convert("RGBA")
+
+          sizes = [16, 32, 128, 256, 512]
+          for s in sizes:
+              im.resize((s, s), Image.Resampling.LANCZOS).save(iconset / f"icon_{s}x{s}.png")
+              im.resize((s * 2, s * 2), Image.Resampling.LANCZOS).save(iconset / f"icon_{s}x{s}@2x.png")
+          PYEOF
+          iconutil -c icns .build/macos/iyagi.iconset -o dist/IYAGI.app/Contents/Resources/iyagi.icns
+
+      - name: Patch IYAGI config
+        run: python3 scripts/configure_iyagi.py dist/IYAGI.app/Contents/Resources/app
+
+      - name: Write Info.plist
+        run: |
+          cat > dist/IYAGI.app/Contents/Info.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+            "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+            <dict>
+              <key>CFBundleExecutable</key><string>launcher</string>
+              <key>CFBundleIdentifier</key><string>com.iyagi.terminal</string>
+              <key>CFBundleName</key><string>IYAGI Terminal</string>
+              <key>CFBundleDisplayName</key><string>IYAGI Terminal</string>
+              <key>CFBundleIconFile</key><string>iyagi.icns</string>
+              <key>CFBundleVersion</key><string>5.3</string>
+              <key>CFBundleShortVersionString</key><string>5.3</string>
+              <key>LSMinimumSystemVersion</key><string>11.0</string>
+            </dict>
+          </plist>
+          EOF
+
+      - name: Build DMG
+        run: |
+          mkdir -p dist
+          hdiutil create -volname "IYAGI Terminal" -srcfolder dist/IYAGI.app -ov -format UDZO dist/IYAGI-macos.dmg
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-package
+          path: dist/IYAGI-macos.dmg
+          if-no-files-found: error
+
+  publish-gitea-release:
+    name: Publish Gitea Release Assets
+    runs-on: ubuntu-latest
+    needs:
+      - build-linux-appimage
+      - build-windows-installer
+      - build-macos-dmg
+    if: startsWith(github.ref, 'refs/tags/vt')
+    steps:
+      - name: Download built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*-package"
+          merge-multiple: true
+          path: release-assets
+
+      - name: Publish/Update release in Gitea
+        uses: https://gitea.com/actions/gitea-release-action@main
+        with:
+          token: ${{ github.token }}
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |-
+            release-assets/IYAGI-linux-x86_64.AppImage
+            release-assets/IYAGI-windows-installer.exe
+            release-assets/IYAGI-macos.dmg

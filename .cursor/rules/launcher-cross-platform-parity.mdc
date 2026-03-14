@@ -1,0 +1,17 @@
+---
+description: Keep launcher changes synchronized across platforms
+alwaysApply: true
+---
+
+# Cross-Platform Launcher Parity
+
+When editing Linux launcher scripts (especially `tools/run-*.sh` and `resources/linux/launch.sh`), keep equivalent behavior aligned for packaged launchers on all supported platforms when applicable.
+
+Required parity checklist:
+- Mirror bridge/runtime behavior changes to `resources/linux/launch.sh` (AppImage runtime).
+- Mirror applicable bridge/runtime changes to `resources/macos/launcher`.
+- Mirror applicable bridge/runtime changes to `resources/windows/launch.bat`.
+- Keep shared defaults/config synchronized in `resources/common/.env.example` and `resources/common/dosbox.conf` when behavior depends on env/config.
+- If a change is platform-specific and cannot be mirrored, document the reason in the implementation summary.
+
+Do not ship Linux-only launcher behavior by default if the same behavior is expected cross-platform.

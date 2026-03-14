@@ -1,0 +1,119 @@
+version: "3"
+
+tasks:
+  deps:
+    desc: Download runtime dependencies used by local scripts
+    cmds:
+      - task: iyagi:extract
+      - task: dosbox:download
+
+  iyagi:extract:
+    desc: Extract software/iyagi53dos.zip for first-time setup
+    cmds:
+      - |
+        set -euo pipefail
+        target_dir="software/iyagi53dos"
+        marker="$target_dir/IYAGI/I.EXE"
+        if [ -f "$marker" ]; then
+          echo "IYAGI files already extracted at $target_dir"
+          exit 0
+        fi
+
+        zip_path=""
+        for c in "software/iyagi53dos.zip" "software/iiyagi53dos.zip"; do
+          if [ -f "$c" ]; then
+            zip_path="$c"
+            break
+          fi
+        done
+        if [ -z "$zip_path" ]; then
+          echo "ERROR: missing software/iyagi53dos.zip (or software/iiyagi53dos.zip)"
+          exit 1
+        fi
+
+        mkdir -p "$target_dir"
+        python3 - "$zip_path" "$target_dir" <<'PYEOF'
+        import pathlib
+        import sys
+        import zipfile
+
+        zip_path = pathlib.Path(sys.argv[1])
+        target_dir = pathlib.Path(sys.argv[2])
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(target_dir)
+        print(f"Extracted {zip_path} -> {target_dir}")
+        PYEOF
+
+  keys:generate:
+    desc: Generate local SSH keypair for SSH_AUTH_MODE=key
+    vars:
+      USER_DATA_ROOT:
+        sh: echo "${USER_DATA_ROOT:-iyagi-data}"
+      KEY_FILE:
+        sh: echo "${KEY_FILE:-{{.USER_DATA_ROOT}}/keys/id_rsa}"
+    cmds:
+      - mkdir -p "$(dirname "{{.KEY_FILE}}")"
+      - |
+        set -euo pipefail
+        if [ -f "{{.KEY_FILE}}" ] && [ -f "{{.KEY_FILE}}.pub" ]; then
+          echo "SSH keypair already exists: {{.KEY_FILE}}"
+          exit 0
+        fi
+        ssh-keygen -t rsa -b 4096 -f "{{.KEY_FILE}}" -N "" -C "iyagi-terminal"
+        chmod 600 "{{.KEY_FILE}}"
+        chmod 644 "{{.KEY_FILE}}.pub"
+        echo "Generated: {{.KEY_FILE}}"
+        echo "Public key:"
+        cat "{{.KEY_FILE}}.pub"
+
+  dosbox:download:
+    desc: Download portable DOSBox-Staging into third_party
+    vars:
+      DOSBOX_VERSION:
+        sh: echo "${DOSBOX_VERSION:-0.82.2}"
+      DOSBOX_ROOT:
+        sh: echo "${DOSBOX_ROOT:-third_party/dosbox-staging}"
+    cmds:
+      - mkdir -p "{{.DOSBOX_ROOT}}/cache" "{{.DOSBOX_ROOT}}/unpacked"
+      - |
+        set -euo pipefail
+        archive="{{.DOSBOX_ROOT}}/cache/dosbox-staging-linux-x86_64-v{{.DOSBOX_VERSION}}.tar.xz"
+        url="https://github.com/dosbox-staging/dosbox-staging/releases/download/v{{.DOSBOX_VERSION}}/dosbox-staging-linux-x86_64-v{{.DOSBOX_VERSION}}.tar.xz"
+        legacy_url="https://github.com/dosbox-staging/dosbox-staging/releases/download/v{{.DOSBOX_VERSION}}/dosbox-staging-linux-v{{.DOSBOX_VERSION}}.tar.xz"
+
+        if [ ! -f "$archive" ]; then
+          echo "Downloading DOSBox-Staging {{.DOSBOX_VERSION}}..."
+          if ! wget -q --show-progress "$url" -O "$archive"; then
+            archive="{{.DOSBOX_ROOT}}/cache/dosbox-staging-linux-v{{.DOSBOX_VERSION}}.tar.xz"
+            wget -q --show-progress "$legacy_url" -O "$archive"
+          fi
+        fi
+
+        rm -rf "{{.DOSBOX_ROOT}}/unpacked"
+        mkdir -p "{{.DOSBOX_ROOT}}/unpacked"
+        tar xf "$archive" -C "{{.DOSBOX_ROOT}}/unpacked" --strip-components=1
+
+        if [ ! -x "{{.DOSBOX_ROOT}}/unpacked/dosbox" ] && [ -x "{{.DOSBOX_ROOT}}/unpacked/usr/bin/dosbox" ]; then
+          cp "{{.DOSBOX_ROOT}}/unpacked/usr/bin/dosbox" "{{.DOSBOX_ROOT}}/unpacked/dosbox"
+          chmod +x "{{.DOSBOX_ROOT}}/unpacked/dosbox"
+        fi
+
+        if [ ! -x "{{.DOSBOX_ROOT}}/unpacked/dosbox" ]; then
+          echo "ERROR: DOSBox binary not found after extraction"
+          exit 1
+        fi
+
+        "{{.DOSBOX_ROOT}}/unpacked/dosbox" --version || true
+
+  bridge:embed-sounds:
+    desc: Generate embedded WAV assets for bridge
+    dir: bridge
+    cmds:
+      - go run ./cmd/embed-sounds
+
+  bridge:build:
+    desc: Generate sounds and build bridge
+    dir: bridge
+    cmds:
+      - go run ./cmd/embed-sounds
+      - go build .

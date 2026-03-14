@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>이야기 5.3 패키지 - DOS 통신을 SSH-BBS로</title>
+  <meta name="description" content="이야기 5.3을 DOSBox와 bridge로 SSH-BBS에 연결하는 멀티플랫폼 패키지 프로젝트">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-4N0G7MTYN8"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-4N0G7MTYN8');
+  </script>
+</head>
+<body>
+
+<a
+  href="https://buy.polar.sh/polar_cl_2RRA7HD1Pv9AFP7pAZRg8XDomwZc9WCLfHXaW0hdJZz"
+  class="support-float-btn"
+  data-polar-checkout
+  data-polar-checkout-theme="dark"
+  aria-label="프로젝트 후원"
+>❤️ Support This Project</a>
+
+<header>
+  <h1>☎️ 이야기 5.3 패키지</h1>
+  <p class="tagline">DOS 통신 감성을 유지하면서 SSH-BBS에 연결하는 포터블 실행 환경</p>
+  <div class="hero-graphic">
+    <div class="hero-badge">IYAGI 5.3 + DOSBox + SSH Bridge</div>
+  </div>
+  <a href="https://github.com/runableapp/iyagi-package" class="btn github-btn" aria-label="GitHub 저장소 보기">
+    <svg class="github-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+      <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
+      0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52
+      -.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64
+      -.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.65 7.65
+      0 0 1 8 4.77c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82
+      1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01
+      8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"></path>
+    </svg>
+    <span>View GitHub Repository</span>
+  </a>
+</header>
+
+<div class="container">
+
+  <section>
+    <h2>💡 무엇을 해결하나요?</h2>
+    <p>
+      <strong>이야기 5.3</strong>은 원래 모뎀 다이얼업 통신용 DOS 프로그램입니다.
+      이 프로젝트는 DOSBox 가상 모뎀과 Go bridge를 이용해,
+      기존 조작감은 유지하면서 <strong>SSH-BBS</strong>로 접속할 수 있게 패키징합니다.
+    </p>
+    <p>
+      목표는 단순합니다: 설치 의존성을 최소화하고, 한 번 빌드한 결과물을
+      Windows, macOS, Linux에서 바로 실행 가능한 형태로 배포합니다.
+    </p>
+  </section>
+
+  <section>
+    <h2>🔌 연결 구조</h2>
+    <pre><code>이야기 5.3 (DOS)
+  -> DOSBox COM4 (AT 명령 전달)
+  -> bridge (ATDT 파싱 + SSH 연결)
+  -> SSH 서버/SSH-BBS (예: 127.0.0.1:40000)</code></pre>
+    <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+      <li><strong>SSH_AUTH_MODE=bbs</strong> 기본: 키 없이 SSH 세션을 열고 BBS 내부 로그인 사용</li>
+      <li><strong>SSH_AUTH_MODE=key</strong> 선택: 기존 SSH 공개키 인증 방식 사용</li>
+      <li><strong>IYAGI 다이얼 문자열</strong>의 대상(<code>ATDT host:port</code>)을 bridge가 그대로 파싱해 SSH 대상으로 사용합니다</li>
+      <li><strong>BRIDGE_PORT</strong>는 IYAGI가 접속할 로컬 브리지 포트입니다 (기본 2323)</li>
+      <li><strong>ZMODEM</strong> 기반 업/다운로드 경로를 런처에서 일관되게 유지</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>⚙️ 필수 설정 예시</h2>
+    <pre><code># bridge가 듣는 로컬 포트 (IYAGI가 먼저 이 포트로 접속)
+BRIDGE_PORT=2323
+
+# 기본값(미입력 ATDT를 대비한 안내용)
+IYAGI_HOST=127.0.0.1
+IYAGI_SSH_PORT=40000
+IYAGI_USER=your-user
+
+# SSH-BBS라면 보통 bbs 모드 권장
+SSH_AUTH_MODE=bbs</code></pre>
+    <p>
+      핵심: 이제 bridge가 <code>ATDT127.0.0.1:40000</code> 같은 다이얼 문자열을 직접 파싱하여
+      해당 SSH 서버(<code>127.0.0.1:40000</code>)로 연결합니다.
+    </p>
+  </section>
+
+  <section>
+    <h2>✨ 주요 기능</h2>
+    <div class="features">
+      <div class="feature">
+        <h3>🧱 포터블 패키지</h3>
+        <p>Linux(AppImage), Windows(Installer), macOS(DMG)로 배포 가능한 구조를 제공합니다.</p>
+      </div>
+      <div class="feature">
+        <h3>🖥️ DOS 감성 유지</h3>
+        <p>이야기 5.3 원본 실행 흐름을 유지하면서 SSH-BBS로 연결합니다.</p>
+      </div>
+      <div class="feature">
+        <h3>🔧 자동 설정 패치</h3>
+        <p><code>I.CNF</code>, <code>I.TEL</code> 자동 패치로 브리지 접속 항목/경로를 맞춰줍니다.</p>
+      </div>
+      <div class="feature">
+        <h3>🧹 런타임 정리</h3>
+        <p>브리지 프로세스 시작/종료를 런처에서 안전하게 관리합니다.</p>
+      </div>
+      <div class="feature">
+        <h3>🌈 DOSBox-X 최적화</h3>
+        <p>스케일러/메뉴바/창 크기 설정을 프로젝트 환경에 맞춰 조정했습니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>🚀 빠른 시작</h2>
+
+    <h3>1) Linux AppImage 빌드</h3>
+    <pre><code>bash tools/build-linux.sh</code></pre>
+
+    <h3>2) 직접 실행(개발/테스트)</h3>
+    <pre><code>bash tools/run-direct.sh</code></pre>
+
+    <h3>3) AppImage 실행</h3>
+    <pre><code>bash tools/run-appimage.sh</code></pre>
+
+    <p style="margin-top: 1.5rem;">
+      상세 사용법은 <a href="../manual/%EC%9D%B4%EC%95%BC%EA%B8%B05.3-%EC%82%AC%EC%9A%A9%EC%9E%90-%EB%A7%A4%EB%89%B4%EC%96%BC.md">한국어 매뉴얼</a>을 참고하세요.
+    </p>
+  </section>
+
+  <section>
+    <h2>📚 문서</h2>
+    <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+      <li><a href="../manual/%EC%9D%B4%EC%95%BC%EA%B8%B05.3-%EC%82%AC%EC%9A%A9%EC%9E%90-%EB%A7%A4%EB%89%B4%EC%96%BC.md">이야기 5.3 사용자 매뉴얼 (한국어)</a></li>
+      <li><a href="../notes/PLAN.md">구현 계획/분석 문서</a></li>
+      <li><a href="https://github.com/runableapp/iyagi-package/releases">릴리스 다운로드</a></li>
+    </ul>
+  </section>
+
+  <section style="text-align: center;">
+    <h2>❤️ 오픈소스 후원</h2>
+    <p>프로젝트가 도움이 되었다면 후원으로 개발 지속에 힘을 보태주세요.</p>
+    <a
+      href="https://buy.polar.sh/polar_cl_2RRA7HD1Pv9AFP7pAZRg8XDomwZc9WCLfHXaW0hdJZz"
+      class="btn"
+      data-polar-checkout
+      data-polar-checkout-theme="dark"
+      aria-label="프로젝트 후원"
+    >Support This Open Source Project</a>
+  </section>
+
+</div>
+
+<footer>
+  <p>
+    Copyright &copy; 2026 IYAGI Package Contributors.
+    <br>
+    Project page inspired by Runable.app style.
+  </p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@polar-sh/checkout@0.1/dist/embed.global.js" defer data-auto-init></script>
+
+</body>
+</html>

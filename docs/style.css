@@ -1,0 +1,184 @@
+:root {
+ --bg: #071326;
+ --fg: #d7e5ff;
+ --accent: #73b4ff;
+ --accent2: #3f84d8;
+ --card-bg: #0b1f3e;
+ --border: #1f3f6b;
+ --heading: #f2f7ff;
+ --muted: #9db7da;
+ --code: #9ecbff;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+ background: var(--bg);
+ color: var(--fg);
+ line-height: 1.6;
+ min-height: 100vh;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.container { max-width: 900px; margin: 0 auto; padding: 2rem; }
+
+.support-float-btn {
+ position: fixed;
+ top: 1rem;
+ right: 1rem;
+ background: var(--accent2);
+ color: #fff;
+ border: 1px solid var(--border);
+ border-radius: 999px;
+ height: 42px;
+ display: inline-flex;
+ align-items: center;
+ padding: 0 1rem;
+ font-size: 0.9rem;
+ font-weight: 700;
+ line-height: 1.1;
+ text-decoration: none;
+ box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+ z-index: 1000;
+}
+
+.support-float-btn:hover {
+ background: var(--accent);
+ text-decoration: none;
+}
+
+@media (max-width: 640px) {
+ .support-float-btn {
+ right: 1rem;
+ height: 38px;
+ padding: 0 0.8rem;
+ font-size: 0.8rem;
+ }
+}
+
+header {
+ text-align: center;
+ padding: 4rem 2rem;
+ border-bottom: 1px solid var(--border);
+ position: relative;
+ overflow: hidden;
+}
+
+header h1 {
+ font-size: 3rem;
+ margin-bottom: 0.5rem;
+ color: var(--heading);
+}
+
+header .tagline {
+ font-size: 1.25rem;
+ color: var(--muted);
+}
+
+.hero-graphic {
+ margin: 2rem auto;
+ max-width: 500px;
+}
+
+.hero-badge {
+ display: inline-block;
+ background: var(--card-bg);
+ border: 1px solid var(--border);
+ border-radius: 999px;
+ padding: 0.75rem 1.25rem;
+ font-weight: 700;
+ color: var(--accent2);
+}
+
+section {
+ padding: 3rem 0;
+ border-bottom: 1px solid var(--border);
+}
+
+section:last-child { border-bottom: none; }
+
+section h2 {
+ font-size: 1.75rem;
+ margin-bottom: 1rem;
+ color: var(--heading);
+}
+
+section p { margin-bottom: 1rem; }
+
+.features {
+ display: grid;
+ grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+ gap: 1.5rem;
+ margin-top: 1.5rem;
+}
+
+.feature {
+ background: var(--card-bg);
+ border: 1px solid var(--border);
+ border-radius: 8px;
+ padding: 1.5rem;
+}
+
+.feature h3 {
+ font-size: 1.1rem;
+ margin-bottom: 0.5rem;
+ color: var(--accent);
+}
+
+pre {
+ background: var(--card-bg);
+ border: 1px solid var(--border);
+ border-radius: 6px;
+ padding: 1rem;
+ overflow-x: auto;
+ font-size: 0.9rem;
+ margin: 1rem 0;
+}
+
+code {
+ font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+ color: var(--code);
+}
+
+.btn {
+ display: inline-block;
+ background: var(--accent2);
+ color: #fff;
+ padding: 0.75rem 1.5rem;
+ border-radius: 6px;
+ font-weight: 600;
+ margin-top: 1rem;
+}
+
+.btn:hover { background: var(--accent); text-decoration: none; }
+
+.github-btn {
+ background: #132849;
+ color: #d7e5ff;
+ border: 1px solid #2a4f85;
+ display: inline-flex;
+ align-items: center;
+ gap: 0.5rem;
+}
+
+.github-btn:hover {
+ background: #1a3560;
+ color: #eef5ff;
+}
+
+.github-icon {
+ flex: 0 0 auto;
+}
+
+footer {
+ text-align: center;
+ padding: 2rem;
+ color: var(--muted);
+ font-size: 0.9rem;
+}
+
+footer a { color: var(--muted); }
+footer a:hover { color: var(--accent); }

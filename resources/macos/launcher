@@ -1,0 +1,213 @@
+#!/bin/bash
+# launcher — macOS .app bundle entry point (Contents/MacOS/launcher).
+#
+# .app bundle layout:
+#   Contents/
+#     MacOS/
+#       launcher      ← this script
+#       dosbox        ← DOSBox-Staging binary
+#       bridge        ← TCP→SSH bridge binary
+#     Resources/
+#       app/          ← IYAGI 5.3 program files
+#       dosbox.conf   ← DOSBox configuration
+#       .env.example  ← connection settings template
+#
+# User-writable data is stored in ~/Library/Application Support/IYAGI/:
+#   keys/             — SSH key files
+#   downloads/        — received files (mapped as D: in DOSBox)
+#   .env              — connection settings
+#   staging/          — temp directory with symlinks for DOSBox mounts
+
+set -euo pipefail
+
+MACOS_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+RESOURCES_DIR="$MACOS_DIR/../Resources"
+DOSBOX="$MACOS_DIR/dosbox"
+BRIDGE="$MACOS_DIR/bridge"
+APP_DIR="$RESOURCES_DIR/app"
+DOSBOX_CONF="$RESOURCES_DIR/dosbox.conf"
+
+# On macOS, user data lives in Application Support
+USER_DATA_ROOT="$HOME/Library/Application Support/IYAGI"
+KEYS_DIR="$USER_DATA_ROOT/keys"
+DOWNLOADS_DIR="$USER_DATA_ROOT/downloads"
+KEY_FILE="$KEYS_DIR/id_rsa"
+
+mkdir -p "$KEYS_DIR" "$DOWNLOADS_DIR"
+
+# ─── Load user config ────────────────────────────────────────────────────────
+
+ENV_FILE="$USER_DATA_ROOT/.env"
+if [ ! -f "$ENV_FILE" ]; then
+    cp "$RESOURCES_DIR/.env.example" "$ENV_FILE"
+    echo ""
+    echo "=== First run: created config at $ENV_FILE"
+    echo "    Edit it to set IYAGI_HOST and IYAGI_USER, then re-run."
+    echo ""
+    open -e "$ENV_FILE"   # open in TextEdit
+    osascript -e 'tell app "System Events" to display dialog "Edit the .env file that just opened in TextEdit, save it, then click OK to continue." buttons {"OK"}'
+fi
+
+# shellcheck source=/dev/null
+source "$ENV_FILE"
+
+IYAGI_HOST="${IYAGI_HOST:-your-server.com}"
+IYAGI_USER="${IYAGI_USER:-user}"
+IYAGI_SSH_PORT="${IYAGI_SSH_PORT:-22}"
+BRIDGE_PORT="${BRIDGE_PORT:-2323}"
+BRIDGE_BUSY_GAP_MS="${BRIDGE_BUSY_GAP_MS:-0}"
+BRIDGE_DTMF_GAP_MS="${BRIDGE_DTMF_GAP_MS:-320}"
+BRIDGE_POST_DTMF_DELAY_MS="${BRIDGE_POST_DTMF_DELAY_MS:-500}"
+DOSBOX_MODEM_LISTENPORT="${DOSBOX_MODEM_LISTENPORT:-auto}"
+DOSBOX_CPU_CORE="${DOSBOX_CPU_CORE:-simple}"
+DOSBOX_CPU_CPUTYPE="${DOSBOX_CPU_CPUTYPE:-386}"
+DOSBOX_CPU_CYCLES="${DOSBOX_CPU_CYCLES:-2000}"
+DOSBOX_SCANLINES="${DOSBOX_SCANLINES:-0}"
+DOSBOX_GLSHADER="${DOSBOX_GLSHADER:-crt/vga-1080p-fake-double-scan}"
+if [[ "$DOSBOX_CPU_CYCLES" =~ ^[0-9]+$ ]]; then
+    DOSBOX_CPU_CYCLES_SET="$DOSBOX_CPU_CYCLES"
+else
+    DOSBOX_CPU_CYCLES_SET="$DOSBOX_CPU_CYCLES"
+fi
+
+DOSBOX_STAGING_OUTPUT="texture"
+DOSBOX_STAGING_GLSHADER="none"
+DOSBOX_STAGING_INTEGER_SCALING="auto"
+if [[ "${DOSBOX_SCANLINES,,}" =~ ^(1|true|yes|on)$ ]]; then
+    DOSBOX_STAGING_OUTPUT="opengl"
+    DOSBOX_STAGING_GLSHADER="$DOSBOX_GLSHADER"
+    DOSBOX_STAGING_INTEGER_SCALING="vertical"
+fi
+
+pick_unused_tcp_port() {
+    python3 - <<'PYEOF'
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()
+PYEOF
+}
+
+is_port_available() {
+    local port="$1"
+    python3 - "$port" <<'PYEOF'
+import socket
+import sys
+port = int(sys.argv[1])
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    s.bind(("127.0.0.1", port))
+except OSError:
+    sys.exit(1)
+finally:
+    s.close()
+sys.exit(0)
+PYEOF
+}
+
+if [ "${BRIDGE_PORT:-}" = "auto" ] || [ -z "${BRIDGE_PORT:-}" ]; then
+    BRIDGE_PORT="$(pick_unused_tcp_port)"
+    echo "Selected bridge port automatically: $BRIDGE_PORT"
+elif ! is_port_available "$BRIDGE_PORT"; then
+    old_port="$BRIDGE_PORT"
+    BRIDGE_PORT="$(pick_unused_tcp_port)"
+    echo "Configured BRIDGE_PORT=$old_port is in use; switched to free port: $BRIDGE_PORT"
+fi
+
+# ─── First-run SSH key setup ─────────────────────────────────────────────────
+
+if [ ! -f "$KEY_FILE" ]; then
+    echo ""
+    echo "=== First run: generating SSH key pair ==="
+    ssh-keygen -t rsa -b 4096 -f "$KEY_FILE" -N "" -C "iyagi-terminal"
+    echo ""
+    PUB_KEY=$(cat "${KEY_FILE}.pub")
+    osascript -e "tell app \"System Events\" to display dialog \"Add this public key to ~/.ssh/authorized_keys on ${IYAGI_HOST}, then click OK:\n\n${PUB_KEY}\" buttons {\"OK\"}"
+fi
+
+# ─── Start the bridge ────────────────────────────────────────────────────────
+
+SSH_CMD="ssh -t -t -p ${IYAGI_SSH_PORT} -i ${KEY_FILE} -o StrictHostKeyChecking=accept-new ${IYAGI_USER}@${IYAGI_HOST}"
+
+BRIDGE_PORT="$BRIDGE_PORT" \
+BRIDGE_CMD="$SSH_CMD" \
+BRIDGE_BUSY_GAP_MS="$BRIDGE_BUSY_GAP_MS" \
+BRIDGE_DTMF_GAP_MS="$BRIDGE_DTMF_GAP_MS" \
+BRIDGE_POST_DTMF_DELAY_MS="$BRIDGE_POST_DTMF_DELAY_MS" \
+"$BRIDGE" &
+
+BRIDGE_PID=$!
+echo "bridge started on 127.0.0.1:${BRIDGE_PORT} (pid $BRIDGE_PID)"
+sleep 1
+
+# ─── Run DOSBox ──────────────────────────────────────────────────────────────
+
+STAGING="$USER_DATA_ROOT/staging"
+mkdir -p "$STAGING"
+ln -sfn "$APP_DIR"       "$STAGING/app"
+ln -sfn "$DOWNLOADS_DIR" "$STAGING/downloads"
+cp -n "$DOSBOX_CONF" "$STAGING/dosbox.conf" 2>/dev/null || true
+
+if [ "$DOSBOX_MODEM_LISTENPORT" = "auto" ]; then
+    DOSBOX_MODEM_LISTENPORT="$(pick_unused_tcp_port)"
+fi
+echo "Using DOSBox modem listenport: $DOSBOX_MODEM_LISTENPORT"
+
+python3 - "$STAGING/dosbox.conf" "$DOSBOX_MODEM_LISTENPORT" <<'PYEOF'
+import pathlib
+import re
+import sys
+
+conf_path = pathlib.Path(sys.argv[1])
+listenport = sys.argv[2]
+text = conf_path.read_text(encoding="utf-8", errors="ignore")
+line = f"serial1=modem listenport:{listenport}"
+mouse_capture_line = "mouse_capture=nomouse"
+mouse_middle_release_line = "mouse_middle_release=false"
+dos_mouse_driver_line = "dos_mouse_driver=false"
+texture_renderer_line = "texture_renderer=auto"
+
+if re.search(r"(?m)^\s*serial1\s*=", text):
+    text = re.sub(r"(?m)^\s*serial1\s*=.*$", line, text)
+else:
+    text += f"\n[serial]\n{line}\n"
+
+if re.search(r"(?m)^\s*mouse_capture\s*=", text):
+    text = re.sub(r"(?m)^\s*mouse_capture\s*=.*$", mouse_capture_line, text)
+else:
+    if "[mouse]" not in text:
+        text += "\n[mouse]\n"
+    text += f"{mouse_capture_line}\n"
+
+if re.search(r"(?m)^\s*mouse_middle_release\s*=", text):
+    text = re.sub(r"(?m)^\s*mouse_middle_release\s*=.*$", mouse_middle_release_line, text)
+else:
+    if "[mouse]" not in text:
+        text += "\n[mouse]\n"
+    text += f"{mouse_middle_release_line}\n"
+
+if re.search(r"(?m)^\s*dos_mouse_driver\s*=", text):
+    text = re.sub(r"(?m)^\s*dos_mouse_driver\s*=.*$", dos_mouse_driver_line, text)
+else:
+    if "[mouse]" not in text:
+        text += "\n[mouse]\n"
+    text += f"{dos_mouse_driver_line}\n"
+
+if re.search(r"(?m)^\s*texture_renderer\s*=", text):
+    text = re.sub(r"(?m)^\s*texture_renderer\s*=.*$", texture_renderer_line, text)
+else:
+    if "[sdl]" not in text:
+        text += "\n[sdl]\n"
+    text += f"{texture_renderer_line}\n"
+
+conf_path.write_text(text, encoding="utf-8")
+PYEOF
+
+(cd "$STAGING" && "$DOSBOX" -conf dosbox.conf -set "core=${DOSBOX_CPU_CORE}" -set "cputype=${DOSBOX_CPU_CPUTYPE}" -set "cpu_cycles=${DOSBOX_CPU_CYCLES_SET}" -set "startup_verbosity=quiet" -set "output=${DOSBOX_STAGING_OUTPUT}" -set "glshader=${DOSBOX_STAGING_GLSHADER}" -set "integer_scaling=${DOSBOX_STAGING_INTEGER_SCALING}" -set "ne2000=false" -set "texture_renderer=auto" -set "mouse_capture=nomouse" -set "mouse_middle_release=false" -set "dos_mouse_driver=false")
+
+# ─── Cleanup ─────────────────────────────────────────────────────────────────
+
+echo "DOSBox closed — stopping bridge (pid $BRIDGE_PID)..."
+kill "$BRIDGE_PID" 2>/dev/null || true
+wait "$BRIDGE_PID" 2>/dev/null || true
