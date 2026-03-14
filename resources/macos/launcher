@@ -24,16 +24,28 @@ MACOS_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 RESOURCES_DIR="$MACOS_DIR/../Resources"
 DOSBOX="$MACOS_DIR/dosbox"
 BRIDGE="$MACOS_DIR/bridge"
-APP_DIR="$RESOURCES_DIR/app"
+BUNDLED_APP_DIR="$RESOURCES_DIR/app"
 DOSBOX_CONF="$RESOURCES_DIR/dosbox.conf"
 
 # On macOS, user data lives in Application Support
 USER_DATA_ROOT="$HOME/Library/Application Support/IYAGI"
 KEYS_DIR="$USER_DATA_ROOT/keys"
 DOWNLOADS_DIR="$USER_DATA_ROOT/downloads"
+RUNTIME_APP_DIR="$USER_DATA_ROOT/app"
 KEY_FILE="$KEYS_DIR/id_rsa"
 
 mkdir -p "$KEYS_DIR" "$DOWNLOADS_DIR"
+
+ensure_runtime_app_copy() {
+    if [ -f "$RUNTIME_APP_DIR/I.EXE" ]; then
+        return
+    fi
+    echo "Seeding writable app files to: $RUNTIME_APP_DIR"
+    rm -rf "$RUNTIME_APP_DIR"
+    mkdir -p "$RUNTIME_APP_DIR"
+    cp -a "$BUNDLED_APP_DIR/." "$RUNTIME_APP_DIR/"
+}
+
 
 # ─── Load user config ────────────────────────────────────────────────────────
 
@@ -145,7 +157,8 @@ sleep 1
 
 STAGING="$USER_DATA_ROOT/staging"
 mkdir -p "$STAGING"
-ln -sfn "$APP_DIR"       "$STAGING/app"
+ensure_runtime_app_copy
+ln -sfn "$RUNTIME_APP_DIR" "$STAGING/app"
 ln -sfn "$DOWNLOADS_DIR" "$STAGING/downloads"
 cp -n "$DOSBOX_CONF" "$STAGING/dosbox.conf" 2>/dev/null || true
 

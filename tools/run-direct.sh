@@ -118,6 +118,7 @@ fi
 
 # shellcheck source=/dev/null
 source "$ENV_FILE"
+IYAGI_PREPARED_DIR="${IYAGI_PREPARED_DIR:-$(python3 "$REPO_ROOT/scripts/prepare_iyagi_source.py")}"
 IYAGI_HOST="${IYAGI_HOST:-your-server.com}"
 IYAGI_USER="${IYAGI_USER:-user}"
 IYAGI_SSH_PORT="${IYAGI_SSH_PORT:-22}"
@@ -170,19 +171,8 @@ fi
 
 # Seed app files once from app/ or software/ archive.
 if [ ! -f "$APP_DIR/I.EXE" ]; then
-    if [ -f "$REPO_ROOT/app/IYAGI/I.EXE" ]; then
-        echo "Seeding IYAGI files from $REPO_ROOT/app/IYAGI"
-        cp -r "$REPO_ROOT/app/IYAGI/." "$APP_DIR/"
-    elif [ -f "$REPO_ROOT/app/I.EXE" ]; then
-        echo "Seeding IYAGI files from $REPO_ROOT/app"
-        cp -r "$REPO_ROOT/app/." "$APP_DIR/"
-    elif [ -f "$REPO_ROOT/software/iyagi53dos/IYAGI/I.EXE" ]; then
-        echo "Seeding IYAGI files from software/iyagi53dos/IYAGI"
-        cp -r "$REPO_ROOT/software/iyagi53dos/IYAGI/." "$APP_DIR/"
-    else
-        echo "ERROR: could not find IYAGI source files in app/ or software/iyagi53dos/IYAGI/"
-        exit 1
-    fi
+    echo "Seeding IYAGI files from $IYAGI_PREPARED_DIR"
+    cp -r "$IYAGI_PREPARED_DIR/." "$APP_DIR/"
 fi
 
 case "$SSH_AUTH_MODE" in
@@ -244,8 +234,6 @@ else:
 
 conf_path.write_text(text, encoding="utf-8")
 PYEOF
-
-python3 "$REPO_ROOT/scripts/configure_iyagi.py" "$APP_DIR"
 
 ln -sfn "$APP_DIR" "$RUN_DIR/app"
 ln -sfn "$DOWNLOADS_DIR" "$RUN_DIR/downloads"

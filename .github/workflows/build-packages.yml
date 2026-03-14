@@ -64,16 +64,12 @@ jobs:
       - name: Install Python deps
         run: python -m pip install --upgrade pillow
 
-      - name: Resolve IYAGI source directory
+      - name: Prepare canonical IYAGI source
         shell: pwsh
         run: |
-          if (Test-Path "app/I.EXE") {
-            "IYAGI_SOURCE_DIR=app" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          } elseif (Test-Path "software/iyagi53dos/IYAGI/I.EXE") {
-            "IYAGI_SOURCE_DIR=software/iyagi53dos/IYAGI" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          } else {
-            throw "Could not find IYAGI files in app/ or software/iyagi53dos/IYAGI/"
-          }
+          $src = python scripts/prepare_iyagi_source.py
+          if (-not $?) { throw "Failed to prepare canonical IYAGI source directory" }
+          "IYAGI_PREPARED_DIR=$src" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build bridge (Windows)
         shell: pwsh
@@ -111,7 +107,7 @@ jobs:
           Copy-Item ".build/windows/plink.exe" "$pkg/bin/plink.exe" -Force
           Copy-Item ".build/windows/puttygen.exe" "$pkg/bin/puttygen.exe" -Force
 
-          Copy-Item "$env:IYAGI_SOURCE_DIR/*" "$pkg/app/" -Recurse -Force
+          Copy-Item "$env:IYAGI_PREPARED_DIR/*" "$pkg/app/" -Recurse -Force
           Copy-Item "resources/common/dosbox.conf" "$pkg/dosbox.conf" -Force
           Copy-Item "resources/common/.env.example" "$pkg/.env.example" -Force
           Copy-Item "resources/windows/launch.bat" "$pkg/launch.bat" -Force
@@ -125,9 +121,6 @@ jobs:
           im = Image.open(src).convert("RGBA")
           im.save(dst, format="ICO", sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
           PYEOF
-
-      - name: Patch IYAGI config
-        run: python scripts/configure_iyagi.py dist/win/IYAGI/app
 
       - name: Install Inno Setup
         shell: pwsh
@@ -202,16 +195,9 @@ jobs:
       - name: Install Python deps
         run: python3 -m pip install --upgrade pillow
 
-      - name: Resolve IYAGI source directory
+      - name: Prepare canonical IYAGI source
         run: |
-          if [ -f "app/I.EXE" ]; then
-            echo "IYAGI_SOURCE_DIR=app" >> "$GITHUB_ENV"
-          elif [ -f "software/iyagi53dos/IYAGI/I.EXE" ]; then
-            echo "IYAGI_SOURCE_DIR=software/iyagi53dos/IYAGI" >> "$GITHUB_ENV"
-          else
-            echo "Could not find IYAGI files in app/ or software/iyagi53dos/IYAGI/" >&2
-            exit 1
-          fi
+          echo "IYAGI_PREPARED_DIR=$(python3 scripts/prepare_iyagi_source.py)" >> "$GITHUB_ENV"
 
       - name: Build bridge (universal)
         run: |
@@ -272,7 +258,7 @@ jobs:
           cp resources/macos/launcher "$APP/MacOS/launcher"
           chmod +x "$APP/MacOS/launcher"
 
-          cp -R "$IYAGI_SOURCE_DIR/." "$APP/Resources/app/"
+          cp -R "$IYAGI_PREPARED_DIR/." "$APP/Resources/app/"
           cp resources/common/dosbox.conf "$APP/Resources/dosbox.conf"
           cp resources/common/.env.example "$APP/Resources/.env.example"
 
@@ -293,9 +279,6 @@ jobs:
               im.resize((s * 2, s * 2), Image.Resampling.LANCZOS).save(iconset / f"icon_{s}x{s}@2x.png")
           PYEOF
           iconutil -c icns .build/macos/iyagi.iconset -o dist/IYAGI.app/Contents/Resources/iyagi.icns
-
-      - name: Patch IYAGI config
-        run: python3 scripts/configure_iyagi.py dist/IYAGI.app/Contents/Resources/app
 
       - name: Write Info.plist
         run: |

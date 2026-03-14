@@ -3,19 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>이야기 5.3 패키지 - DOS 통신을 SSH-BBS로</title>
-  <meta name="description" content="이야기 5.3을 DOSBox와 bridge로 SSH-BBS에 연결하는 멀티플랫폼 패키지 프로젝트">
+  <title>이야기 도스박스</title>
+  <meta name="description" content="이야기 5.3을 도스박스와 브리지(bridge) 프로그램으로 비비에스(BBS)에 연결하는 멀티플랫폼 패키지 프로젝트">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="stylesheet" href="style.css">
+  <link rel="preload" href="modem.ogg" as="audio" type="audio/ogg">
 
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-4N0G7MTYN8"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', 'G-4N0G7MTYN8');
-  </script>
 </head>
 <body>
 
@@ -25,15 +20,14 @@
   data-polar-checkout
   data-polar-checkout-theme="dark"
   aria-label="프로젝트 후원"
->❤️ Support This Project</a>
+>♡ 프로젝트 후원하기</a>
 
 <header>
-  <h1>☎️ 이야기 5.3 패키지</h1>
-  <p class="tagline">DOS 통신 감성을 유지하면서 SSH-BBS에 연결하는 포터블 실행 환경</p>
-  <div class="hero-graphic">
-    <div class="hero-badge">IYAGI 5.3 + DOSBox + SSH Bridge</div>
-  </div>
-  <a href="https://github.com/runableapp/iyagi-package" class="btn github-btn" aria-label="GitHub 저장소 보기">
+  <img src="hero-retro.png" alt="이야기 도스박스 레트로 화면" class="hero-top-image">
+  <h1>☎ 이야기 도스박스</h1>
+  <p class="tagline">도스 통신 감성을 그대로 살려 비비에스(BBS)로 연결하는 실행 환경을 제공하여 추억을 되살립니다.</p>
+
+  <a href="https://github.com/runableapp/iyagi-dosbox" class="btn github-btn" aria-label="GitHub 저장소 보기">
     <svg class="github-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
       <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
       0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52
@@ -43,112 +37,116 @@
       1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01
       8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"></path>
     </svg>
-    <span>View GitHub Repository</span>
+    <span>GitHub 저장소 보기</span>
   </a>
 </header>
 
 <div class="container">
 
   <section>
-    <h2>💡 무엇을 해결하나요?</h2>
+    <h2>◆ "이야기 도스박스"가 무엇인가요?</h2>
     <p>
-      <strong>이야기 5.3</strong>은 원래 모뎀 다이얼업 통신용 DOS 프로그램입니다.
-      이 프로젝트는 DOSBox 가상 모뎀과 Go bridge를 이용해,
-      기존 조작감은 유지하면서 <strong>SSH-BBS</strong>로 접속할 수 있게 패키징합니다.
+      <span class="iyagi-word-wrap">
+        <span class="iyagi-word">이야기
+          <sup class="iyagi-word-ref">
+            <a href="https://ko.wikipedia.org/wiki/%EC%9D%B4%EC%95%BC%EA%B8%B0_(%EC%86%8C%ED%94%84%ED%8A%B8%EC%9B%A8%EC%96%B4)" target="_blank" rel="noopener" class="iyagi-word-link">1</a><span class="iyagi-word-sep">,</span><a href="https://namu.wiki/w/%EC%9D%B4%EC%95%BC%EA%B8%B0(%EC%86%8C%ED%94%84%ED%8A%B8%EC%9B%A8%EC%96%B4)" target="_blank" rel="noopener" class="iyagi-word-link">2</a>
+          </sup>
+        </span>
+      </span>는 원래 모뎀 다이얼업 통신용 도스 프로그램입니다.
+      이 프로젝트는 도스박스 가상 모뎀과 브리지(bridge) 프로그램을 이용해
+      기존 조작감을 유지하면서 <strong>비비에스(BBS)</strong>로 접속할 수 있게 묶어 둔 실행 패키지입니다.
     </p>
     <p>
-      목표는 단순합니다: 설치 의존성을 최소화하고, 한 번 빌드한 결과물을
-      Windows, macOS, Linux에서 바로 실행 가능한 형태로 배포합니다.
+      그 시절 접속음과 화면을 보면 괜히 가슴이 뛰지 않나요?
+      이야기 도스박스는 그 추억을 지금 다시 꺼내 즐길 수 있도록, 윈도우/맥OS/리눅스에서 바로 실행되는 형태로 준비했습니다.
     </p>
-  </section>
-
-  <section>
-    <h2>🔌 연결 구조</h2>
-    <pre><code>이야기 5.3 (DOS)
-  -> DOSBox COM4 (AT 명령 전달)
-  -> bridge (ATDT 파싱 + SSH 연결)
-  -> SSH 서버/SSH-BBS (예: 127.0.0.1:40000)</code></pre>
-    <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
-      <li><strong>SSH_AUTH_MODE=bbs</strong> 기본: 키 없이 SSH 세션을 열고 BBS 내부 로그인 사용</li>
-      <li><strong>SSH_AUTH_MODE=key</strong> 선택: 기존 SSH 공개키 인증 방식 사용</li>
-      <li><strong>IYAGI 다이얼 문자열</strong>의 대상(<code>ATDT host:port</code>)을 bridge가 그대로 파싱해 SSH 대상으로 사용합니다</li>
-      <li><strong>BRIDGE_PORT</strong>는 IYAGI가 접속할 로컬 브리지 포트입니다 (기본 2323)</li>
-      <li><strong>ZMODEM</strong> 기반 업/다운로드 경로를 런처에서 일관되게 유지</li>
-    </ul>
-  </section>
-
-  <section>
-    <h2>⚙️ 필수 설정 예시</h2>
-    <pre><code># bridge가 듣는 로컬 포트 (IYAGI가 먼저 이 포트로 접속)
-BRIDGE_PORT=2323
-
-# 기본값(미입력 ATDT를 대비한 안내용)
-IYAGI_HOST=127.0.0.1
-IYAGI_SSH_PORT=40000
-IYAGI_USER=your-user
-
-# SSH-BBS라면 보통 bbs 모드 권장
-SSH_AUTH_MODE=bbs</code></pre>
     <p>
-      핵심: 이제 bridge가 <code>ATDT127.0.0.1:40000</code> 같은 다이얼 문자열을 직접 파싱하여
-      해당 SSH 서버(<code>127.0.0.1:40000</code>)로 연결합니다.
+      필요한 건 하나뿐입니다. 다운로드해서 간단히 설치하고 실행만 하면,
+      금세 그 시절로 돌아가 다시 즐길 수 있습니다.
+    </p>
+    <div class="intro-video">
+      <video id="introVideo" controls preload="metadata" playsinline src="접속-small.webm"></video>
+    </div>
+    <p class="intro-video-credit">
+      <a href="https://webzine.nfm.go.kr/2016/03/29/%ED%8C%8C%EB%9E%80-%ED%99%94%EB%A9%B4-%EB%84%88%EB%A8%B8%EC%9D%98-%ED%97%A4%ED%94%BC%EC%97%94%EB%93%9C/" target="_blank" rel="noopener">&lt;영화 '접속', 1997년&gt;</a>
     </p>
   </section>
 
   <section>
-    <h2>✨ 주요 기능</h2>
+    <h2>▣ 어떻게 동작하나요?</h2>
+    <div class="flow-diagram" aria-label="동작 흐름 다이어그램">
+      <div class="flow-node">이야기</div>
+      <div class="flow-arrow" aria-hidden="true">→</div>
+      <div class="flow-node">도스박스</div>
+      <div class="flow-arrow" aria-hidden="true">→</div>
+      <div class="flow-node">브리지(bridge)</div>
+      <div class="flow-arrow" aria-hidden="true">↔</div>
+      <div class="flow-node">비비에스(BBS)</div>
+    </div>
+    <p class="flow-caption">실행하면 위 순서로 연결되어, 익숙한 화면 감성 그대로 접속을 즐길 수 있습니다.</p>
+  </section>
+
+  <section>
+    <h2>★ 주요 기능</h2>
     <div class="features">
       <div class="feature">
-        <h3>🧱 포터블 패키지</h3>
-        <p>Linux(AppImage), Windows(Installer), macOS(DMG)로 배포 가능한 구조를 제공합니다.</p>
+        <h3>■ 주요 플래폼 지원</h3>
+        <p>리눅스(AppImage), 윈도우(설치 프로그램), 맥OS(DMG)를 지원합니다.</p>
       </div>
       <div class="feature">
-        <h3>🖥️ DOS 감성 유지</h3>
-        <p>이야기 5.3 원본 실행 흐름을 유지하면서 SSH-BBS로 연결합니다.</p>
+        <h3>▤ 도스 감성 유지</h3>
+        <p>이야기 원본 실행 흐름을 유지하면서 비비에스(BBS)로 연결합니다.</p>
       </div>
       <div class="feature">
-        <h3>🔧 자동 설정 패치</h3>
+        <h3>※ 자동 설정 패치</h3>
         <p><code>I.CNF</code>, <code>I.TEL</code> 자동 패치로 브리지 접속 항목/경로를 맞춰줍니다.</p>
       </div>
       <div class="feature">
-        <h3>🧹 런타임 정리</h3>
+        <h3>☏ 모뎀 사운드 재현</h3>
+        <p>접속 시 특유의 모뎀 다이얼/연결음을 들을 수 있어 당시 사용 경험을 최대한 유지합니다.</p>
+      </div>
+      <div class="feature">
+        <h3>※ 완성형 ↔ UTF-8 변환</h3>
+        <p>브리지(bridge) 프로그램에서 완성형(EUC-KR 계열)과 UTF-8 간 텍스트 변환을 처리해 한글 깨짐을 줄입니다.</p>
+      </div>
+      <div class="feature">
+        <h3>◇ 런타임 정리</h3>
         <p>브리지 프로세스 시작/종료를 런처에서 안전하게 관리합니다.</p>
       </div>
       <div class="feature">
-        <h3>🌈 DOSBox-X 최적화</h3>
-        <p>스케일러/메뉴바/창 크기 설정을 프로젝트 환경에 맞춰 조정했습니다.</p>
+        <h3>◈ 도스박스 최적화</h3>
+        <p>스케일러/창 크기 등 실행 설정을 프로젝트 환경에 맞춰 조정했습니다.</p>
       </div>
     </div>
   </section>
 
   <section>
-    <h2>🚀 빠른 시작</h2>
-
-    <h3>1) Linux AppImage 빌드</h3>
-    <pre><code>bash tools/build-linux.sh</code></pre>
-
-    <h3>2) 직접 실행(개발/테스트)</h3>
-    <pre><code>bash tools/run-direct.sh</code></pre>
-
-    <h3>3) AppImage 실행</h3>
-    <pre><code>bash tools/run-appimage.sh</code></pre>
-
-    <p style="margin-top: 1.5rem;">
-      상세 사용법은 <a href="../manual/%EC%9D%B4%EC%95%BC%EA%B8%B05.3-%EC%82%AC%EC%9A%A9%EC%9E%90-%EB%A7%A4%EB%89%B4%EC%96%BC.md">한국어 매뉴얼</a>을 참고하세요.
-    </p>
+    <h2>▦ 스크린샷</h2>
+    <p>아래에는 대표 화면 1장만 표시됩니다. 나머지 예시 화면은 팝업에서 확인할 수 있습니다.</p>
+    <figure class="screenshot-single">
+      <img src="screenshot/iyagi-dosbox-1.webp" alt="이야기 도스박스 대표 스크린샷" class="screenshot-image">
+      <figcaption>대표 실행 화면</figcaption>
+    </figure>
+    <button type="button" class="btn secondary-btn" id="openScreenshots">다른 스크린샷 보기</button>
   </section>
 
   <section>
-    <h2>📚 문서</h2>
-    <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
-      <li><a href="../manual/%EC%9D%B4%EC%95%BC%EA%B8%B05.3-%EC%82%AC%EC%9A%A9%EC%9E%90-%EB%A7%A4%EB%89%B4%EC%96%BC.md">이야기 5.3 사용자 매뉴얼 (한국어)</a></li>
-      <li><a href="../notes/PLAN.md">구현 계획/분석 문서</a></li>
-      <li><a href="https://github.com/runableapp/iyagi-package/releases">릴리스 다운로드</a></li>
+    <h2>▶ 실행 영상</h2>
+    <p>실행 영상 미리보기</p>
+    <div class="video-placeholder">
+      <video controls preload="metadata" playsinline src="screenshot/iyagi-dosbox.webm" class="video-preview"></video>
+    </div>
+  </section>
+
+  <section>
+    <h2>§ 문서</h2>
+    <ul class="docs-list">
+      <li><a href="%EC%9D%B4%EC%95%BC%EA%B8%B0%EB%A7%A4%EB%89%B4%EC%96%BC.html">이야기 5.3 사용자 매뉴얼 (한국어)</a></li>
     </ul>
   </section>
 
-  <section style="text-align: center;">
-    <h2>❤️ 오픈소스 후원</h2>
+  <section class="donation-section">
+    <h2>♡ 프로젝트 후원</h2>
     <p>프로젝트가 도움이 되었다면 후원으로 개발 지속에 힘을 보태주세요.</p>
     <a
       href="https://buy.polar.sh/polar_cl_2RRA7HD1Pv9AFP7pAZRg8XDomwZc9WCLfHXaW0hdJZz"
@@ -156,20 +154,41 @@ SSH_AUTH_MODE=bbs</code></pre>
       data-polar-checkout
       data-polar-checkout-theme="dark"
       aria-label="프로젝트 후원"
-    >Support This Open Source Project</a>
+    >프로젝트 후원하기</a>
+  </section>
+
+  <section>
+    <h2>§ 크레딧</h2>
+    <ul class="docs-list">
+      <li>이야기 팀</li>
+      <li><a href="https://www.dosbox.com/" target="_blank" rel="noopener">DOSBox</a> (GNU GPL-2.0-or-later)</li>
+      <li><a href="https://pjw48.net/iyagiggc/" target="_blank" rel="noopener">이야기 굵은체 폰트 (IyagiGGC)</a> (MIT)</li>
+    </ul>
   </section>
 
 </div>
 
 <footer>
-  <p>
-    Copyright &copy; 2026 IYAGI Package Contributors.
-    <br>
-    Project page inspired by Runable.app style.
-  </p>
+  <img src="runable-logo.webp" alt="Runable.app 로고" class="footer-logo">
+  <p class="footer-meta"><a href="%ED%8F%B4%EB%A6%AC%ED%8F%BC-%EB%B9%84%EC%83%81%EC%97%85-%EB%9D%BC%EC%9D%B4%EC%84%A0%EC%8A%A4-%ED%95%9C%EA%B5%AD%EC%96%B4.html">폴리폼 비상업라이센스</a>: <a href="https://polyformproject.org/licenses/noncommercial/1.0.0/" target="_blank" rel="noopener">PolyForm Noncommercial</a> | &copy; 2026 <a href="https://runable.app" target="_blank" rel="noopener">Runable.app</a></p>
 </footer>
 
+<div class="modal" id="screenshotsModal" aria-hidden="true" role="dialog" aria-label="스크린샷 모음">
+  <div class="modal-backdrop" data-close-modal></div>
+  <div class="modal-panel">
+    <button type="button" class="modal-close" data-close-modal aria-label="팝업 닫기">닫기</button>
+    <h3>추가 스크린샷</h3>
+    <div class="modal-grid">
+      <img src="screenshot/iyagi-dosbox-1.webp" alt="이야기 도스박스 스크린샷 1" class="screenshot-image">
+      <img src="screenshot/iyagi-dosbox-2.webp" alt="이야기 도스박스 스크린샷 2" class="screenshot-image">
+    </div>
+  </div>
+</div>
+
+<audio id="modemSound" src="modem.ogg" preload="auto"></audio>
+
 <script src="https://cdn.jsdelivr.net/npm/@polar-sh/checkout@0.1/dist/embed.global.js" defer data-auto-init></script>
+<script src="script.js" defer></script>
 
 </body>
 </html>

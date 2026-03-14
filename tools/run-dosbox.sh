@@ -118,6 +118,16 @@ raise SystemExit(1)
 PYEOF
 }
 
+sync_iyagi_runtime_config() {
+    local src_dir="$1"
+    local dst_dir="$2"
+    for name in I.CNF I.TEL; do
+        if [ -f "$src_dir/$name" ]; then
+            cp -f "$src_dir/$name" "$dst_dir/$name"
+        fi
+    done
+}
+
 if [ ! -f "$REPO_ROOT/resources/common/.env.example" ]; then
     echo "ERROR: missing .env template at resources/common/.env.example"
     exit 1
@@ -132,6 +142,8 @@ fi
 
 # shellcheck source=/dev/null
 source "$ENV_FILE"
+IYAGI_PREPARED_DIR="${IYAGI_PREPARED_DIR:-$(python3 "$REPO_ROOT/scripts/prepare_iyagi_source.py")}"
+IYAGI_SYNC_CONFIG_ON_START="${IYAGI_SYNC_CONFIG_ON_START:-0}"
 IYAGI_HOST="${IYAGI_HOST:-your-server.com}"
 IYAGI_USER="${IYAGI_USER:-user}"
 IYAGI_SSH_PORT="${IYAGI_SSH_PORT:-22}"
@@ -176,6 +188,8 @@ echo "  ENV_FILE=$ENV_FILE"
 echo "  USER_DATA_ROOT=$USER_DATA_ROOT"
 echo "  IYAGI_HOST=$IYAGI_HOST"
 echo "  IYAGI_USER=$IYAGI_USER"
+echo "  IYAGI_PREPARED_DIR=$IYAGI_PREPARED_DIR"
+echo "  IYAGI_SYNC_CONFIG_ON_START=$IYAGI_SYNC_CONFIG_ON_START"
 echo "  IYAGI_SSH_PORT=$IYAGI_SSH_PORT"
 echo "  SSH_AUTH_MODE=$SSH_AUTH_MODE"
 echo "  BRIDGE_PORT=$BRIDGE_PORT"
@@ -200,17 +214,12 @@ echo "  DOSBOX_CPU_CYCLES=$DOSBOX_CPU_CYCLES"
 echo "  DOSBOX_CPU_CYCLES_SET=$DOSBOX_CPU_CYCLES_SET"
 
 if [ ! -d "$IYAGI_DIR" ]; then
-    if [ -d "$REPO_ROOT/software/iyagi53dos/IYAGI" ]; then
-        cp -r "$REPO_ROOT/software/iyagi53dos/IYAGI" "$APP_DIR/"
-    elif [ -d "$REPO_ROOT/app" ]; then
-        cp -r "$REPO_ROOT/app" "$APP_DIR/IYAGI"
-    else
-        echo "ERROR: IYAGI files not found."
-        echo "Expected one of:"
-        echo "  - $REPO_ROOT/software/iyagi53dos/IYAGI"
-        echo "  - $REPO_ROOT/app"
-        exit 1
-    fi
+    mkdir -p "$IYAGI_DIR"
+    cp -r "$IYAGI_PREPARED_DIR/." "$IYAGI_DIR/"
+fi
+if [[ "${IYAGI_SYNC_CONFIG_ON_START,,}" =~ ^(1|true|yes|on)$ ]]; then
+    # Optional refresh from canonical defaults for reproducibility.
+    sync_iyagi_runtime_config "$IYAGI_PREPARED_DIR" "$IYAGI_DIR"
 fi
 
 ensure_portable_dosbox
@@ -228,7 +237,6 @@ fi
 
 RUNTIME_CONF="$RUN_DIR/dosbox.runtime.conf"
 cp "$REPO_ROOT/resources/common/dosbox.conf" "$RUNTIME_CONF"
-python3 "$REPO_ROOT/scripts/configure_iyagi.py" "$IYAGI_DIR"
 ln -sfn "$IYAGI_DIR" "$RUN_DIR/app"
 ln -sfn "$DOWNLOADS_DIR" "$RUN_DIR/downloads"
 
@@ -269,9 +277,9 @@ PY
 
 SSH_ARGS_COMMON="-o BatchMode=no -o PreferredAuthentications=keyboard-interactive,password,publickey -o PubkeyAuthentication=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10"
 if [ "$SSH_AUTH_MODE" = "key" ]; then
-    SSH_TEMPLATE="ssh $SSH_ARGS_COMMON -i \"$KEY_FILE\" -p {port} {user}@{host}"
+    SSH_TEMPLATE="ssh $SSH_ARGS_COMMON -i \"$KEY_FILE\" -p {port} {userhost}"
 else
-    SSH_TEMPLATE="ssh $SSH_ARGS_COMMON -p {port} {user}@{host}"
+    SSH_TEMPLATE="ssh $SSH_ARGS_COMMON -p {port} {userhost}"
 fi
 
 echo "Starting bridge on 127.0.0.1:$BRIDGE_PORT..."
@@ -281,6 +289,7 @@ IYAGI_HOST="$IYAGI_HOST" \
 IYAGI_USER="$IYAGI_USER" \
 IYAGI_SSH_PORT="$IYAGI_SSH_PORT" \
 BRIDGE_CMD_TEMPLATE="$SSH_TEMPLATE" \
+BRIDGE_SSH_USER="$IYAGI_USER" \
 BRIDGE_CLIENT_ENCODING="$BRIDGE_CLIENT_ENCODING" \
 BRIDGE_SERVER_ENCODING="$BRIDGE_SERVER_ENCODING" \
 BRIDGE_SERVER_REPAIR_MOJIBAKE="$BRIDGE_SERVER_REPAIR_MOJIBAKE" \

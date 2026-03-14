@@ -34,10 +34,11 @@ var errATHHangup = errors.New("ath hangup requested")
 //   BRIDGE_CMD_TEMPLATE - command template for outbound SSH sessions.
 //                         Placeholders: {host} {port} {userhost}
 //                         (default: "ssh -t -t -o StrictHostKeyChecking=accept-new -p {port} {userhost}")
-//   BRIDGE_SSH_USER     - optional SSH username to prepend as user@host
-//                         when {userhost} is used (default: empty)
-//   BRIDGE_DEBUG        - set to 1/true/yes/on to log client keystroke bytes
-//                         during CONNECT state (default: off)
+//   BRIDGE_SSH_USER     - SSH username for {userhost} (default: "bbs")
+//                         Can also be set as user@host to override dialed host.
+//   BRIDGE_DEBUG        - set to 1/true/yes/on to log CONNECT-state stream bytes
+//                         (client->ssh and ssh->client) (default: off)
+//                         Server-side logs include raw bytes before repair/conversion.
 //                         Logs also include an encoding guess.
 //   BRIDGE_CLIENT_ENCODING - optional input conversion before SSH:
 //                         off|utf8 (default): no conversion
@@ -68,7 +69,7 @@ func main() {
 		"BRIDGE_CMD_TEMPLATE",
 		"ssh -t -t -o StrictHostKeyChecking=accept-new -p {port} {userhost}",
 	)
-	sshUser := getenv("BRIDGE_SSH_USER", "")
+	sshUser := getenv("BRIDGE_SSH_USER", "bbs")
 	debugEnabled := parseBoolEnv(getenv("BRIDGE_DEBUG", "0"))
 	clientEncoding := strings.ToLower(strings.TrimSpace(getenv("BRIDGE_CLIENT_ENCODING", "off")))
 	serverEncoding := strings.ToLower(strings.TrimSpace(getenv("BRIDGE_SERVER_ENCODING", "off")))
@@ -122,7 +123,7 @@ func main() {
 		log.Printf("bridge: ssh user: %s", sshUser)
 	}
 	if debugEnabled {
-		log.Printf("bridge: debug keystroke logging enabled (BRIDGE_DEBUG)")
+		log.Printf("bridge: debug stream logging enabled (BRIDGE_DEBUG)")
 	}
 	if clientEncoding != "" && clientEncoding != "off" && clientEncoding != "utf8" {
 		log.Printf("bridge: client encoding conversion enabled: %s -> utf8", clientEncoding)
@@ -229,6 +230,7 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 				writeModemResponse(conn, "ERROR")
 				continue
 			}
+			logOutboundDialDebug(sessionID, sshUser, host, port, execPath, execArgs)
 			log.Printf("bridge[%s]: dialing SSH target %s:%s via %s %s", sessionID, host, port, execPath, strings.Join(execArgs, " "))
 
 			if err := dialWhileProbing(rawTarget, host, port, connectTimeout, sessionID, dtmfGapMs, postDtmfDelayMs); err != nil {
@@ -325,15 +327,23 @@ func runConnectedSession(conn net.Conn, input io.Reader, sessionID, execPath str
 	go func() {
 		waitCh <- c.Wait()
 	}()
+	waitResultCh := make(chan error, 1)
+	go func() {
+		err := <-waitCh
+		// If remote side exits first, unblock any client-side read so the session
+		// can return promptly and emit NO CARRIER without waiting for Enter.
+		_ = conn.SetReadDeadline(time.Now())
+		waitResultCh <- err
+	}()
 	if preConnect != nil {
 		if err := preConnect(); err != nil {
 			_ = c.Process.Kill()
-			<-waitCh
+			<-waitResultCh
 			return fmt.Errorf("pre-connect action failed: %w", err)
 		}
 	}
 	select {
-	case err := <-waitCh:
+	case err := <-waitResultCh:
 		if err != nil {
 			return fmt.Errorf("session ended before CONNECT: %w", err)
 		}
@@ -358,15 +368,16 @@ func runConnectedSession(conn net.Conn, input io.Reader, sessionID, execPath str
 
 	go func() {
 		defer wg.Done()
-		serverReader := maybeRepairServerMojibakeReader(stdout, serverRepairMojibake)
+		serverSource := io.Reader(stdout)
 		if debugEnabled {
-			rawLogged := io.TeeReader(serverReader, newDebugTapWriter(sessionID, "ssh->bridge(raw)"))
-			outputReader := applyServerEncodingReader(rawLogged, serverEncoding)
-			convertedLogged := io.TeeReader(outputReader, newDebugTapWriter(sessionID, "bridge->client(conv)"))
-			io.Copy(conn, convertedLogged) //nolint:errcheck
-			return
+			// Log server bytes exactly as received from SSH before any repair/conversion.
+			serverSource = io.TeeReader(serverSource, newDebugTapWriter(sessionID, "ssh->bridge(raw-src)"))
 		}
+		serverReader := maybeRepairServerMojibakeReader(serverSource, serverRepairMojibake)
 		outputReader := applyServerEncodingReader(serverReader, serverEncoding)
+		if debugEnabled {
+			outputReader = io.TeeReader(outputReader, newDebugTapWriter(sessionID, "bridge->client(conv)"))
+		}
 		io.Copy(conn, outputReader) //nolint:errcheck
 	}()
 
@@ -378,13 +389,17 @@ func runConnectedSession(conn net.Conn, input io.Reader, sessionID, execPath str
 		if c.Process != nil {
 			_ = c.Process.Kill()
 		}
-		<-waitCh
+		<-waitResultCh
 		return errCtrlCHangup
+	}
+	if nerr, ok := clientCopyErr.(net.Error); ok && nerr.Timeout() {
+		// Expected when remote side exits and SetReadDeadline is used to unblock input.
+		clientCopyErr = nil
 	}
 	if clientCopyErr != nil && !errors.Is(clientCopyErr, io.EOF) {
 		log.Printf("bridge[%s]: client stream ended with error: %v", sessionID, clientCopyErr)
 	}
-	if err := <-waitCh; err != nil {
+	if err := <-waitResultCh; err != nil {
 		return fmt.Errorf("session ended: %w", err)
 	}
 	log.Printf("bridge[%s]: session ended cleanly", sessionID)
@@ -1228,12 +1243,16 @@ func runFirstAvailablePlayer(candidates [][]string) error {
 }
 
 func buildOutboundCommand(template, sshUser, host, port string) (string, []string, error) {
-	userHost := host
-	if sshUser != "" {
-		userHost = sshUser + "@" + host
+	resolvedUser, resolvedHost, err := resolveSSHUserAndHost(sshUser, host)
+	if err != nil {
+		return "", nil, err
+	}
+	userHost := resolvedHost
+	if resolvedUser != "" {
+		userHost = resolvedUser + "@" + resolvedHost
 	}
 	cmdline := template
-	cmdline = strings.ReplaceAll(cmdline, "{host}", host)
+	cmdline = strings.ReplaceAll(cmdline, "{host}", resolvedHost)
 	cmdline = strings.ReplaceAll(cmdline, "{port}", port)
 	cmdline = strings.ReplaceAll(cmdline, "{userhost}", userHost)
 	cmdline = strings.TrimSpace(cmdline)
@@ -1242,6 +1261,60 @@ func buildOutboundCommand(template, sshUser, host, port string) (string, []strin
 		return "", nil, fmt.Errorf("empty BRIDGE_CMD_TEMPLATE after substitution")
 	}
 	return parts[0], parts[1:], nil
+}
+
+func logOutboundDialDebug(sessionID, sshUser, host, port, execPath string, execArgs []string) {
+	trimmedUser := strings.TrimSpace(sshUser)
+	resolvedUser, resolvedHost, resolveErr := resolveSSHUserAndHost(sshUser, host)
+	userHost := resolvedHost
+	if resolvedUser != "" {
+		userHost = resolvedUser + "@" + resolvedHost
+	}
+	log.Printf(
+		"bridge[%s]: ssh-debug user(raw)=%q user(trimmed)=%q host(raw)=%q host(resolved)=%q port=%q userhost=%q",
+		sessionID,
+		sshUser,
+		trimmedUser,
+		host,
+		resolvedHost,
+		port,
+		userHost,
+	)
+	if resolveErr != nil {
+		log.Printf("bridge[%s]: ssh-debug user/host resolve error: %v", sessionID, resolveErr)
+	}
+	if sshUser != trimmedUser {
+		log.Printf("bridge[%s]: ssh-debug user has leading/trailing whitespace bytes: %s", sessionID, debugBytes([]byte(sshUser)))
+	}
+	if strings.ContainsAny(trimmedUser, "@:/ \t\r\n") {
+		log.Printf("bridge[%s]: ssh-debug user contains suspicious characters: %q", sessionID, trimmedUser)
+	}
+	argv := append([]string{execPath}, execArgs...)
+	quoted := make([]string, 0, len(argv))
+	for _, token := range argv {
+		quoted = append(quoted, strconv.QuoteToASCII(token))
+	}
+	log.Printf("bridge[%s]: ssh-debug argv=%s", sessionID, strings.Join(quoted, " "))
+}
+
+func resolveSSHUserAndHost(sshUser, dialHost string) (user, host string, err error) {
+	host = strings.TrimSpace(dialHost)
+	if host == "" {
+		return "", "", fmt.Errorf("empty dial host")
+	}
+	user = strings.TrimSpace(sshUser)
+	if user == "" {
+		return "", host, nil
+	}
+	if strings.Contains(user, "@") {
+		parts := strings.Split(user, "@")
+		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+			return "", "", fmt.Errorf("invalid BRIDGE_SSH_USER %q; expected user or user@host", sshUser)
+		}
+		user = strings.TrimSpace(parts[0])
+		host = strings.TrimSpace(parts[1])
+	}
+	return user, host, nil
 }
 
 func writeModemResponse(conn net.Conn, msg string) {

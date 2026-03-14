@@ -1,97 +1,111 @@
-// Theme toggle
-function toggleTheme() {
-  const html = document.documentElement;
-  const btn = document.querySelector('.theme-toggle');
-  if (html.getAttribute('data-theme') === 'dark') {
-    html.removeAttribute('data-theme');
-    btn.textContent = '🌙';
-    localStorage.setItem('theme', 'light');
-  } else {
-    html.setAttribute('data-theme', 'dark');
-    btn.textContent = '☀️';
-    localStorage.setItem('theme', 'dark');
-  }
+window.dataLayer = window.dataLayer || [];
+function gtag() {
+  window.dataLayer.push(arguments);
 }
+gtag("js", new Date());
+gtag("config", "G-4N0G7MTYN8");
 
-// Load theme: saved preference > system preference > light
-(function() {
-  const saved = localStorage.getItem('theme');
-  const btn = document.querySelector('.theme-toggle');
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+function initScreenshotModal() {
+  const modal = document.getElementById("screenshotsModal");
+  const openBtn = document.getElementById("openScreenshots");
+  const closeTargets = document.querySelectorAll("[data-close-modal]");
 
-  const useDark = saved === 'dark' || (saved === null && prefersDark);
-  if (useDark) {
-    document.documentElement.setAttribute('data-theme', 'dark');
-    btn.textContent = '☀️';
-  }
-})();
-
-// Floating emojis
-(function() {
-  const emojiConfig = [
-    { char: '☎️', native: 'ltr' },
-    { char: '💬', native: 'ltr' },
-    { char: '🗨️', native: 'rtl' },
-    { char: '🖥️', native: 'ltr' },
-    { char: '📦', native: 'ltr' },
-    { char: '🔌', native: 'ltr' },
-  ];
-
-  const container = document.getElementById('emojiContainer');
-  if (!container) {
+  if (!modal || !openBtn) {
     return;
   }
 
-  function createEmoji(forceDirection) {
-    const emoji = document.createElement('span');
-    const pick = emojiConfig[Math.floor(Math.random() * emojiConfig.length)];
-    emoji.textContent = pick.char;
-
-    const direction = forceDirection || (Math.random() > 0.5 ? 'ltr' : 'rtl');
-    const needsFlip = direction !== pick.native;
-    emoji.className = 'floating-emoji ' + direction + (needsFlip ? ' flipped' : '');
-
-    const topPos = Math.random() * 80 + 10;
-    emoji.style.top = topPos + '%';
-
-    const duration = 5 + Math.random() * 3;
-    emoji.style.animationDuration = duration + 's';
-
-    const size = 1.2 + Math.random() * 0.8;
-    emoji.style.fontSize = size + 'rem';
-
-    container.appendChild(emoji);
-    setTimeout(() => emoji.remove(), duration * 1000);
+  function openModal() {
+    modal.classList.add("is-open");
+    modal.setAttribute("aria-hidden", "false");
   }
 
-  let phase = 0;
-  const busyDuration = 6000;
-  const quietDuration = 8000;
+  function closeModal() {
+    modal.classList.remove("is-open");
+    modal.setAttribute("aria-hidden", "true");
+  }
 
-  function getSpawnDelay() {
-    if (phase === 0) {
-      return 800 + Math.random() * 400;
+  openBtn.addEventListener("click", openModal);
+  closeTargets.forEach(function (el) {
+    el.addEventListener("click", closeModal);
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") {
+      closeModal();
     }
-    return 3000 + Math.random() * 2000;
+  });
+}
+
+function initIntroMediaChain() {
+  const modemSound = document.getElementById("modemSound");
+  const introVideo = document.getElementById("introVideo");
+
+  if (!modemSound || !introVideo) {
+    return;
   }
 
-  function scheduleNext() {
-    const delay = getSpawnDelay();
-    setTimeout(() => {
-      createEmoji();
-      scheduleNext();
-    }, delay);
+  // Hard guard: never initialize this chain more than once per page lifecycle.
+  if (modemSound.dataset.chainInitialized === "1") {
+    return;
+  }
+  modemSound.dataset.chainInitialized = "1";
+
+  // Explicitly disable looping to avoid unexpected repeat playback.
+  modemSound.loop = false;
+  introVideo.loop = false;
+
+  if (modemSound.readyState === 0) {
+    modemSound.load();
   }
 
-  function cyclePhase() {
-    phase = (phase + 1) % 2;
-    const duration = phase === 0 ? busyDuration : quietDuration;
-    setTimeout(cyclePhase, duration);
+  modemSound.addEventListener(
+    "ended",
+    function () {
+      if (introVideo.dataset.autoPlayedOnce === "1") {
+        return;
+      }
+      introVideo.dataset.autoPlayedOnce = "1";
+      introVideo.currentTime = 0;
+      introVideo.play().catch(function () {});
+    },
+    { once: true }
+  );
+
+  let started = false;
+  const unlockEvents = ["pointerdown", "keydown", "touchstart"];
+
+  function removeUnlockHandlers() {
+    unlockEvents.forEach(function (eventName) {
+      document.removeEventListener(eventName, startModemAndChain);
+    });
   }
 
-  for (let i = 0; i < 4; i++) {
-    setTimeout(() => createEmoji(), i * 300);
+  function startModemAndChain() {
+    if (started || modemSound.dataset.autoPlayedOnce === "1") {
+      return;
+    }
+    started = true;
+    modemSound.dataset.autoPlayedOnce = "1";
+    removeUnlockHandlers();
+    modemSound.currentTime = 0;
+    modemSound.play().catch(function () {});
   }
-  scheduleNext();
-  setTimeout(cyclePhase, busyDuration);
-})();
+
+  // First try: play immediately on render.
+  if (modemSound.dataset.autoPlayedOnce !== "1") {
+    modemSound.dataset.autoPlayedOnce = "1";
+    modemSound.currentTime = 0;
+    modemSound.play().catch(function () {
+      modemSound.dataset.autoPlayedOnce = "0";
+    // Browser autoplay policy blocked audio; retry once on first interaction.
+      unlockEvents.forEach(function (eventName) {
+        document.addEventListener(eventName, startModemAndChain, { once: true, passive: true });
+      });
+    });
+  }
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+  initScreenshotModal();
+  initIntroMediaChain();
+});

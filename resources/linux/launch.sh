@@ -67,7 +67,7 @@ if [ -z "${APPDIR:-}" ]; then
 fi
 
 BRIDGE="$APPDIR/usr/bin/bridge"
-APP_DIR="$APPDIR/app"
+BUNDLED_APP_DIR="$APPDIR/app"
 DOSBOX_CONF="$APPDIR/dosbox.conf"
 
 # User-writable data location:
@@ -90,9 +90,21 @@ fi
 
 KEYS_DIR="$CONFIG_ROOT/keys"
 DOWNLOADS_DIR="$DATA_ROOT/downloads"
+RUNTIME_APP_DIR="$DATA_ROOT/app"
 KEY_FILE="$KEYS_DIR/id_rsa"
 
 mkdir -p "$KEYS_DIR" "$DOWNLOADS_DIR"
+
+ensure_runtime_app_copy() {
+    if [ -f "$RUNTIME_APP_DIR/I.EXE" ]; then
+        return
+    fi
+    echo "Seeding writable app files to: $RUNTIME_APP_DIR"
+    rm -rf "$RUNTIME_APP_DIR"
+    mkdir -p "$RUNTIME_APP_DIR"
+    cp -a "$BUNDLED_APP_DIR/." "$RUNTIME_APP_DIR/"
+}
+
 
 # ─── Load user config ────────────────────────────────────────────────────────
 
@@ -355,8 +367,9 @@ fi
 # staging directory that has both symlinks in place.
 STAGING="$DATA_ROOT/staging"
 mkdir -p "$STAGING"
-# Symlink read-only app files from the AppImage into the writable staging area
-ln -sfn "$APP_DIR"       "$STAGING/app"
+ensure_runtime_app_copy
+# Symlink writable app files into the staging area.
+ln -sfn "$RUNTIME_APP_DIR" "$STAGING/app"
 ln -sfn "$DOWNLOADS_DIR" "$STAGING/downloads"
 # Always refresh dosbox.conf from the packaged version so updates take effect.
 # (Users should customize via .env, not by editing staging/dosbox.conf.)

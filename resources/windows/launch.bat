@@ -79,6 +79,7 @@ if /I "%ORIGINAL_BRIDGE_PORT%"=="auto" (
     echo Configured BRIDGE_PORT=%ORIGINAL_BRIDGE_PORT% is in use; switched to free port: %BRIDGE_PORT%
 )
 if not defined DOSBOX_MODEM_LISTENPORT set "DOSBOX_MODEM_LISTENPORT=auto"
+set "APP_DIR=%PKG%app"
 
 if /I "%DOSBOX_MODEM_LISTENPORT%"=="auto" (
     for /f %%P in ('powershell -NoProfile -Command "$l=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse(\"127.0.0.1\"),0);$l.Start();$p=$l.LocalEndpoint.Port;$l.Stop();Write-Output $p"') do (

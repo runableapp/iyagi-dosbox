@@ -57,20 +57,8 @@ go version | head -1
 python3 --version
 python3 -c "import PIL" >/dev/null 2>&1 || err "Python Pillow is required for icon conversion. Install with: python3 -m pip install pillow"
 
-# Prefer app/ when present; otherwise auto-fallback to software/ archive path.
-IYAGI_SOURCE_DIR=""
-if [ -f "$REPO_ROOT/app/I.EXE" ]; then
-    IYAGI_SOURCE_DIR="$REPO_ROOT/app"
-    ok "Using IYAGI source from app/"
-elif [ -f "$REPO_ROOT/software/iyagi53dos/IYAGI/I.EXE" ]; then
-    IYAGI_SOURCE_DIR="$REPO_ROOT/software/iyagi53dos/IYAGI"
-    ok "Using IYAGI source from software/iyagi53dos/IYAGI/"
-else
-    err "Could not find IYAGI files.
-       Expected either:
-         - app/I.EXE
-         - software/iyagi53dos/IYAGI/I.EXE"
-fi
+IYAGI_PREPARED_DIR="${IYAGI_PREPARED_DIR:-$(python3 "$REPO_ROOT/scripts/prepare_iyagi_source.py")}"
+ok "Using canonical IYAGI source from $IYAGI_PREPARED_DIR"
 ok "All prerequisites met"
 
 # ─── 2. Prepare build directory ──────────────────────────────────────────────
@@ -133,13 +121,10 @@ fi
 
 log "Assembling AppDir payload..."
 
-# IYAGI program files — copy from detected source and then patch the config
+# IYAGI program files — copy from canonical prepared source
 mkdir -p "$APPDIR/app"
-cp -r "$IYAGI_SOURCE_DIR/." "$APPDIR/app/"
+cp -r "$IYAGI_PREPARED_DIR/." "$APPDIR/app/"
 ok "Copied IYAGI files ($(ls "$APPDIR/app" | wc -l) files)"
-
-# Patch I.CNF (download path) and I.TEL (phone book)
-python3 "$REPO_ROOT/scripts/configure_iyagi.py" "$APPDIR/app"
 
 # Downloads folder placeholder (writable user data is outside AppImage at runtime)
 mkdir -p "$APPDIR/downloads"

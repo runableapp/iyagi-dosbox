@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>이야기 5.3 사용자 매뉴얼</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="script.js" defer></script>
+</head>
+<body class="manual-page">
+<header class="manual-simple-header">
+<h1>☎ 이야기 도스박스</h1>
+<hr>
+</header>
+<h1 id="이야기-53-사용자-매뉴얼-이-프로젝트용">이야기 5.3 사용자 매뉴얼
+(이 프로젝트용)</h1>
+<p>이 문서는 <code>도스 + 이야기 5.3</code>를 이 저장소의 패키지(직접
+실행/AppImage)로 사용하는 방법을 정리한 한국어 매뉴얼입니다.</p>
+<h2 id="1-개요">1) 개요</h2>
+<ul>
+<li><code>이야기 5.3</code>는 원래 모뎀(AT 명령) 기반 통신
+프로그램입니다.</li>
+<li>이 프로젝트는 모뎀 대신 다음 경로로 비비에스(BBS)에 연결합니다.</li>
+<li><code>이야기 5.3</code> -&gt; <code>도스박스 가상 모뎀</code> -&gt;
+<code>Go 브리지(bridge) 프로그램</code> -&gt;
+<code>SSH 서버(또는 비비에스(BBS))</code></li>
+<li>기본 구성은 <code>SSH_AUTH_MODE=bbs</code>이며, SSH 키 없이 세션을
+열고 BBS 내부 로그인(ID/PW)을 사용하는 시나리오를 기본으로 둡니다.</li>
+</ul>
+<h2 id="2-실행-방법">2) 실행 방법</h2>
+<h3 id="2-1-직접-실행-개발테스트">2-1. 직접 실행 (개발/테스트)</h3>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">bash</span> tools/run-direct.sh</span></code></pre></div>
+<h3 id="2-2-appimage-실행">2-2. AppImage 실행</h3>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">bash</span> tools/run-appimage.sh</span></code></pre></div>
+<p>또는 AppImage 직접 실행:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">./dist/IYAGI-linux-x86_64.AppImage</span></span></code></pre></div>
+<h2 id="3-첫-실행-시-설정-파일">3) 첫 실행 시 설정 파일</h2>
+<p>실행 모드에 따라 <code>.env</code> 위치가 다릅니다.</p>
+<ul>
+<li>직접 실행(<code>tools/run-direct.sh</code>) 기본값:
+<code>iyagi-data/.env</code> (저장소 루트 기준)</li>
+<li>AppImage 직접 실행 기본값:
+<ul>
+<li>설정:
+<code>${XDG_CONFIG_HOME:-~/.config}/iyagi-terminal/.env</code></li>
+<li>데이터:
+<code>${XDG_DATA_HOME:-~/.local/share}/iyagi-terminal/</code></li>
+</ul></li>
+<li>Windows 패키지(<code>launch.bat</code>) 기본값:
+<ul>
+<li>설정: 설치/압축 해제 폴더의 <code>.env</code></li>
+<li>예: <code>C:\Users\&lt;사용자&gt;\Downloads\IYAGI\.env</code></li>
+</ul></li>
+<li>macOS <code>.app</code> 런처(<code>Contents/MacOS/launcher</code>)
+기본값:
+<ul>
+<li>설정: <code>~/Library/Application Support/IYAGI/.env</code></li>
+<li>데이터:
+<code>~/Library/Application Support/IYAGI/downloads/</code></li>
+</ul></li>
+<li>공통: <code>USER_DATA_ROOT</code>를 지정하면 해당 경로를 우선
+사용합니다.</li>
+</ul>
+<p>런처의 값 해석 우선순위:</p>
+<ol type="1">
+<li>셸에서 export한 환경변수</li>
+<li><code>.env</code></li>
+<li>런처 기본값(<code>${VAR:-default}</code>)</li>
+</ol>
+<p>현재 접속 모델은 <code>ATDT &lt;host&gt;:&lt;port&gt;</code> 직접
+다이얼이므로, <code>IYAGI_HOST</code>/<code>IYAGI_USER</code>는 필수값이
+아니라 기본 힌트용입니다.</p>
+<pre class="dotenv"><code>IYAGI_HOST=접속할_서버
+IYAGI_USER=ssh_접속_계정
+BRIDGE_PORT=2323
+SSH_AUTH_MODE=bbs</code></pre>
+<p>주요 옵션:</p>
+<ul>
+<li><code>SSH_AUTH_MODE=bbs</code>: 기본값. 키 생성 없이 비비에스(BBS) 스타일
+접속.</li>
+<li><code>SSH_AUTH_MODE=key</code>: 전통 SSH 키 인증 사용(이 경우에만
+<code>iyagi-data/keys</code> 사용).</li>
+<li><code>DOSBOX_X_SCALER</code>: 화면 보간/스케일러
+<ul>
+<li>예: <code>hq2x forced</code> (부드럽게),
+<code>normal2x forced</code> (픽셀 선명)</li>
+</ul></li>
+</ul>
+<h2 id="4-접속-절차-이-프로젝트-기준">4) 접속 절차 (이 프로젝트
+기준)</h2>
+<ol type="1">
+<li>런처가 브리지(bridge) 프로그램을 먼저 실행합니다.
+(<code>127.0.0.1:2323</code> 대기)</li>
+<li>도스박스에서 이야기 5.3가 시작됩니다.</li>
+<li>이야기에서 <code>ATDT호스트:포트</code>를 입력해 다이얼합니다. (예:
+<code>ATDT127.0.0.1:40000</code>)</li>
+<li>브리지(bridge) 프로그램이 <code>ATDT</code>의 호스트/포트를 파싱해
+해당 SSH 대상으로 연결합니다.</li>
+</ol>
+<h2 id="5-전화번호부통신-설정">5) 전화번호부/통신 설정</h2>
+<p>이 프로젝트는 빌드 시 <code>scripts/configure_iyagi.py</code>로
+이야기 설정 파일을 자동 패치합니다.</p>
+<ul>
+<li>과거 <code>127.0.0.1:2323</code> 고정 항목은 제거</li>
+<li>COM4 -&gt; 브리지(bridge) 프로그램(<code>BRIDGE_PORT</code>) 경로
+사용</li>
+<li>다운로드 경로를 패키지 구조에 맞게 조정</li>
+</ul>
+<p>수동 조정이 필요하면 이야기 내부의 전화번호부/통신설정 메뉴에서 다음
+개념을 확인하세요.</p>
+<ul>
+<li>통신 속도(BPS)</li>
+<li>패리티/데이터비트/스톱비트</li>
+<li>Flow Control(XON/XOFF, RTS/CTS)</li>
+</ul>
+<h2 id="6-파일-전송-zmodem">6) 파일 전송 (ZMODEM)</h2>
+<p>이야기 5.3는 ZMODEM 전송을 지원합니다.</p>
+<ul>
+<li>업로드: 이야기의 파일전송 메뉴에서 업로드 실행</li>
+<li>다운로드: 이야기의 파일전송 메뉴에서 다운로드 실행</li>
+<li>자동 다운로드/프로토콜 동작은 상대(BBS) 측 설정에 따라 달라질 수
+있습니다.</li>
+</ul>
+<p>수신 파일 저장 위치:</p>
+<ul>
+<li>직접 실행 기본값: <code>iyagi-data/downloads/</code></li>
+<li>AppImage 기본값:
+<code>${XDG_DATA_HOME:-~/.local/share}/iyagi-terminal/downloads/</code></li>
+</ul>
+<h2 id="7-자주-쓰는-조작">7) 자주 쓰는 조작</h2>
+<p>원본 도움말(<code>I.HLP</code>) 기준으로 F1 도움말 체계가
+제공됩니다.</p>
+<ul>
+<li><code>F1</code>: 도움말/현재 항목 안내</li>
+<li>통신, 캡처, 전송, 스크립트 등은 이야기 내부 메뉴에서 접근 가능</li>
+</ul>
+<p>주의: 배포본/키맵 파일(<code>KEY.DEF</code>)에 따라 일부 단축키
+체계가 달라질 수 있으므로, 실제 사용 중에는 <code>F1</code> 도움말을
+우선 기준으로 보세요.</p>
+<h2 id="8-스크립트-기능">8) 스크립트 기능</h2>
+<p>원본 도움말과 <code>NEW.DOC</code>에 따르면 이야기 5.3는
+스크립트(자동화) 기능을 제공합니다.</p>
+<ul>
+<li>대기 문자열(<code>Wait_str</code>)</li>
+<li>문자열 송신(<code>Send_str</code>)</li>
+<li>분기(<code>If/Else</code>)</li>
+<li>지연(<code>Delay</code>)</li>
+<li>업/다운로드 호출</li>
+</ul>
+<p>자동 로그인/자동 메뉴 진입 같은 반복 작업을 줄일 때 유용합니다.</p>
+<h2 id="9-문제-해결">9) 문제 해결</h2>
+<h3 id="9-1-키-폴더가-보이는데-필요한가">9-1. 키 폴더가 보이는데
+필요한가?</h3>
+<ul>
+<li>기본 <code>SSH_AUTH_MODE=bbs</code>에서는 필요 없습니다.</li>
+<li><code>SSH_AUTH_MODE=key</code>일 때만 <code>iyagi-data/keys</code>를
+사용합니다.</li>
+</ul>
+<h3 id="9-2-창이-너무-크거나-일부만-채워짐">9-2. 창이 너무 크거나 일부만
+채워짐</h3>
+<ul>
+<li><code>tools/run-direct.sh</code>와
+<code>tools/run-appimage.sh</code>를 같은 <code>USER_DATA_ROOT</code>로
+맞춰 실행하세요.</li>
+<li><code>.env</code>에서 스케일러를 조정하세요.
+<ul>
+<li>선명: <code>DOSBOX_X_SCALER="normal2x forced"</code></li>
+<li>부드러움: <code>DOSBOX_X_SCALER="hq2x forced"</code></li>
+</ul></li>
+</ul>
+<h3 id="9-3-메뉴바상단-dosbox-x-메뉴-숨기기">9-3. 메뉴바(상단 도스박스-X
+메뉴) 숨기기</h3>
+<p>현재 런처는 도스박스-X 실행 시 메뉴를 숨기도록 설정되어 있습니다.</p>
+<h2 id="10-원문-자료">10) 원문 자료</h2>
+<ul>
+<li><a href="http://pds.dnavi.info/DOSUTIL/121391">DNAVI DOS UTIL -
+이야기 5.3</a></li>
+<li><a href="https://sualchi.tistory.com/13720077">이야기 5.3 소개 글
+(수알치 블로그)</a></li>
+</ul>
+<footer>
+  <img src="runable-logo.webp" alt="Runable.app 로고" class="footer-logo">
+  <p>&copy; 2026 <a href="https://runable.app" target="_blank" rel="noopener">Runable.app</a></p>
+</footer>
+</body>
+</html>

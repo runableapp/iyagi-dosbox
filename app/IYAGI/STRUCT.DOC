@@ -1,0 +1,224 @@
+* ¸åÑÁ¤åÑ¡ 1ˆ· Š¹¡
+
+ struct  tel  /* ¸åÑÁ¤åÑ¡· Š¹¡, Á· 103 byte */
+ {
+     char name[21];   /* ·¡Ÿq  21 Byte */
+
+     char telnum[17]; /* ¸åÑÁ¤åÑ¡ 17 Byte */
+
+     int brate;       /* ¸å­·­¢•¡ 2 Byte
+                         0 ·¡¡e    1200 BPS,
+                         1 ·¡¡e    2400 BPS,
+                         2 ·¡¡e    4800 BPS,
+                         3 ·¡¡e    9600 BPS,
+                         4 ·¡¡e   19200 BPS,
+                         5 ·¡¡e   38400 BPS,
+                         6 ·¡¡e   57600 BPS,
+                         7 ·¡¡e  115200 BPS,
+                         8 ·¡¡e     110 BPS,
+                         9 ·¡¡e     150 BPS,
+                        10 ·¡¡e     300 BPS,
+                        11 ·¡¡e     600 BPS ·¡”a.
+                      */
+
+
+     char parity;     /* ÌŸ¡Ë¡ §¡Ëa 1 Byte
+                          Even ·¡¡e 'E',
+                          Odd  ·¡¡e 'O',
+                          None ·¡¡e 'N' ·¡”a. */
+
+     int dbit;        /* •A·¡Èá§¡Ëa 2 Byte
+                          7 ™¡“e 8 ·¡”a. */
+
+     int sbit;        /* ¯aÉ³§¡Ëa   2 Byte
+                          0 ™¡“e 1 ·¡”a. */
+
+     int han;         /* ¬a¶wÐe‹i· ¹·ŸA 2 Byte
+                          0 ·¡¡e  " ¬w¶w  ¹¡ÐsÑw",
+                          1 ·¡¡e  " ¬q¬÷  ¹¡ÐsÑw",
+                          2 ·¡¡e  " ‹q¬÷  ¹¡ÐsÑw",
+                          3 ·¡¡e  "µ• KS  ¹¡ÐsÑw",
+                          4 ·¡¡e  "•¡Œ§¡ ¹¡ÐsÑw",
+                          5 ·¡¡e  "7 §¡Ëa µÅ¬÷Ñw",
+                          6 ·¡¡e  "KS5601 µÅ¬÷Ñw",
+                          7 ·¡¡e  " µw¢…  ¸å¶w  "
+                     */
+
+
+
+     char hlp[56];   /* §¡‰¡· ¶w 56 Byte
+                        §¡‰¡µA“e '@' ¡ ¯¡¸bÐa¡e ¯aÇaŸ³Ëa Ìa·©
+                        · ·¡Ÿq·¡ —i´áˆa‰¡, '#'·¡ —i´áˆa¡e ·¡•·
+                        ¡A“A Ìa·©· ·¡Ÿq·¡ —i´áˆe”a.
+                     */
+ };
+
+ * 'C' ´å´á¡ aÈa´ö·i˜· Š¹¡
+
+ struct setting
+ {
+     int  card;           /* Äa—a· ¹·ŸA */
+
+     int  port;           /* COM Port· ¤åÑ¡ */
+
+     int  brate;          /* ¸å­·­¢•¡,  ¶áµA¬á ¬é¡wÐe ¸åÑÁ¤åÑ¡¦·
+                             ¸å­·­¢•¡· Ñw¯¢‰Á ˆ{”a.
+                              0 ·¡¡e    1200 BPS,
+                              1 ·¡¡e    2400 BPS,
+                              2 ·¡¡e    4800 BPS,
+                              3 ·¡¡e    9600 BPS,
+                              4 ·¡¡e   19200 BPS,
+                              5 ·¡¡e   38400 BPS,
+                              6 ·¡¡e   57600 BPS,
+                              7 ·¡¡e  115200 BPS,
+                              8 ·¡¡e     110 BPS,
+                              9 ·¡¡e     150 BPS,
+                             10 ·¡¡e     300 BPS,
+                             11 ·¡¡e     600 BPS ·¡”a.
+                          */
+
+
+     int  parity;         /* Parity §¡Ëa
+                             0 ·¡¡e EVEN
+                             1 ·¡¡e ODD
+                             2 ·¡¡e NONE
+                               * ¸åÑÁ¤åÑ¡µA¬á ³a·¡“e ˆõ‰Á“e ”a
+                                 Ÿa”a.
+                          */
+
+     int  tel_mode;      /* ¸å¸a¯¢·¡¡e 0, ‹¡‰¯¢·¡¡e 1 ·¡”a. */
+
+     int  dbit;           /* •A·¡Èá §¡Ëaˆa 0 ·¡¡e 7,
+                                    1 ·¡¡e 8 ·¡”a.       */
+
+     int  sbit;           /* ¸÷»¡§¡Ëaˆa  0 ™¡“e 1 ·¡”a. */
+
+     int  host_gul;      /* ¶á· han ‰Á ˆ{”a. Ñ¡¯aËa· Ðe‹i ¹·\
+                              ŸA */
+
+     int  kbd;            /* Ç¡¥¡—a· ¹·ŸA
+                             2 ¤é¯¢·e 0,
+                             3 ¤é¯¢·e 1,
+                             3 ¤é¯¢-No Shift“e 2 ·¡”a.
+                          */
+
+     int  h_fnt;          /* Ðe‹iÍ¥Ëa
+                             ŠŠ·eÁA“e   0,
+                             ­A¤é¯¢ÁA“e 1,
+
+
+                             ´e¬w®ÁA“e 2 ·¡”a.
+                          */
+
+     int  e_fnt;          /* µw¢…Í¥Ëa
+                             ¡w¹¡ÁA“e     0,
+                             ŠŠ·e‰¡—¢ÁA“e 1,
+                             »¥¡ eÁA“e   2,
+                             ¯¥¡w¹¡ÁA“e   3 ·¡”a.
+                          */
+
+     int  wait_time;      /* ¸åÑÁˆé‹¡· ‹¡”aŸ± ¯¡ˆe */
+
+     char cmd[78];        /* ·¡´¡‹¡· Á¡‹¡ÑÁ ¡ww */
+
+     int  terminal_type;  /* Èá£¡é· ¹·ŸA */
+
+     int  cursor_type;    /* Äá¬á· ¹·ŸA
+                             0 ·¡¡e  Äá¬á  ´ô·q,
+                             1 ·¡¡e  §iœâ  ¤e¼b·±,
+                             2 ·¡¡e  §iœâ  ‰¡¸÷,
+                             3 ·¡¡e  £»º‰  ¤e¼b·±,
+                             4 ·¡¡e  £»º‰  ‰¡¸÷ ·¡”a.
+                          */
+
+     int  mouse_use;      /* ”aœqºá(Mouse)· ¬a¶w µa¦ */
+
+     int  mouse_cr;       /* ”aœqºá(Mouse) –áµA
+
+
+                             CR ·i ý»¡ ´g·a¡e 0 ·¡‰¡,
+                             CR ·i ý·a¡e 1 ·¡”a. */
+
+     int  printer;        /* ÏaŸ¥Èá· ¹·ŸA
+                             0 ·¡¡e ¹¡ÐsÑw Å¡—a ÏaŸ¥Èá,
+                             1 ·¡¡e µÅ¬÷Ñw Å¡—a ÏaŸ¥Èá·¡”a.
+                          */
+
+     int  fast_start;     /* ·¡´¡‹¡· ¯¡¸b¤w¯¢
+                             0 ·¡¡e ‹a· ¯¡¸bÐa‰¡,
+                             1 ·¡¡e ¨iŸ¡ ¯¡¸bÐe”a.
+                          */
+
+     int  CR_LF_trans;    /* <CR>· ¥eÑÅ
+                             0 ·¡¡e ¥eÑÅÐa»¡ ´g‰¡,
+                             1 ·¡¡e <CR> + <LF>¡ ¤aŽ…”a. */
+
+     int  editor_cursor;  /* ¢…¬áÍe»³‹¡· Äá¬á ¹·ŸA
+                             0 ·¡¡e  Äá¬á  ´ô·q,
+                             1 ·¡¡e  §iœâ  ¤e¼b·±,
+                             2 ·¡¡e  §iœâ  ‰¡¸÷,
+                             3 ·¡¡e  £»º‰  ¤e¼b·±,
+                             4 ·¡¡e  £»º‰  ‰¡¸÷ ·¡”a.
+                          */
+
+     int  hang_delay;     /* ¸åÑÁg‹¡· ”‹¡¯¡ˆe */
+
+
+     int  break_delay;    /* Beeak ¯¥Ñ¡Ÿi ¥¡“e ¯¡ˆe */
+
+     int  redial_delay;   /* ¸åÑÁˆé‹¡ ¯©ÌÒ ‹¡”aŸ¡“e ¯¡ˆe */
+
+     int  hanja_conv;     /* Ðe¸aŸi Ðe‹i¡ ¤aŽ´á ÑÁ¡eµA ¥¡·©»¡
+                             Ÿi ¸÷Ðe”a. */
+
+     char hanja_name[58]; /* Ðe¸a Ìa·©· ·¡Ÿq‰Á ‰w¡ */
+
+     char module_init[22];/* ÏaŸ¥Èá Á¡‹¡ÑÁ ¡ww */
+
+     char down_area[58];  /* ¤h‹¡ ¡¢¢ */
+
+     char ext[4];         /* ¢…¬áÍe»³‹¡· Ìa·© ÑÂ¸w¸a */
+
+     unsigned int gap;    /* ·¡´¡‹¡· ‹i®A »¡µe­¢•¡ˆt */
+
+     int  backmake;      /*¢…¬áÍe»³‹¡· ¤‚´óÌa·©(*.BAK)  e—i‹¡
+                              0 ·¡¡e ¤‚´óÌa·©·i  e—i»¡ ´g‰¡,
+                              1 ·¡¡e ¤‚´óÌa·©·i  e—e”a.*/
+
+     char protocol[80];   /* ¬a¶w¸a ¸å­· Ïa¡É¡Çi· ·¡Ÿq */
+
+     char reserved[80];   /* µ´¢ µwµb */
+
+     char down_proargs[80]; /* ”a¶…¡—a· ¡¢¢·i »¡¸÷ */
+
+
+     char color1, color2; /* ¸å‰w, ¤‰w¬‚ */
+
+     char c_help1, c_help2; /* •¡¶‘ i ¬‚¬w */
+
+     char c_top1, c_top2; /* Î‰”a¶… ¬‚Œi */
+
+     char edit1, edit2;   /* ‹iËi ¬‚Œi */
+
+     char c_chat1, c_chat2; /* ÀË·¤a ¬‚Œi */
+
+     char send_delay;     /* ¥¡‹¡ »¡µe ­¢•¡ */
+
+     char auto_down;      /* ¸a•· ”a¶…¡—a, ¸ó­¢Ìa·©· ‹¡¢ µa
+                             ¦Ÿi ¸÷Ðe”a. ¬w¶á 4 bit“e ¸a•·”a¶…
+                             ¡—aŸi Ði»¡ ¸÷Ða‰¡, Ða¶á 4 bit“e
+                             ¸ó­¢Ìa·©·i  e—i»¡· µa¦Ÿi ¸÷Ðe”a.
+                          */
+
+     char grdsz;          /* DSZŸi ÑÁ¡e¬wµA¬á ¤h·i»¡ •¡¯a¡
+                             ¤h·i»¡ ¸÷Ðe”a. */
+
+     char sound_use;      /* ­¡Ÿ¡ Åq/q »¡¸÷ */
+
+     char vga800;         /* 800 * 600 ÑÁ¡e·i ³i ˆõ·¥»¡ »¡¸÷ */
+     char bs_check;       /* BS ‹i®AµA¬á Ðe‹iˆñ¬aŸi Ði»¡ »¡¸÷ (1·¡¡e ˆñ¬a)*/
+     char flow_control;   /* 0 : Flow control ˆñ¬a ´g·q
+                             1 : XON/OFF ˆñ¬a
+                             2 : CTS/RTS ˆñ¬a
+                             3 : XON/OFF, CTS/RTS ¡¡– ˆñ¬a */
+ };

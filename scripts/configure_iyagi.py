@@ -45,6 +45,8 @@ ITEL_FILENAME = "I.TEL"
 # I.CNF: the original download path string to find and replace
 ICNF_OLD_PATH = b"C:\\COMM\\TALK53\\DOWN"
 ICNF_NEW_PATH = b"D:\\"          # maps to downloads/ folder in DOSBox
+# Offsets accidentally forced by older patch logic; restore from .orig when present.
+ICNF_LEGACY_RESTORE_OFFSETS = (57, 61)
 
 # I.TEL: header is 39 bytes (ends with 0x1A DOS EOF sentinel)
 ITEL_HEADER_SENTINEL = 0x1A
@@ -57,6 +59,7 @@ assert struct.calcsize(ITEL_ENTRY_FMT) == ITEL_ENTRY_SIZE, (
 
 # Legacy bridge phone-book target to remove from I.TEL.
 LEGACY_BRIDGE_TELNUM = "127.0.0.1:2323"
+HANGUL_MODE_WANSUNG = 0
 
 # ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -72,18 +75,40 @@ def patch_icnf(path: str) -> None:
     with open(path, "rb") as f:
         data = bytearray(f.read())
 
-    idx = data.find(ICNF_OLD_PATH)
-    if idx == -1:
-        print(f"  [I.CNF] Download path not found — skipping (already patched?)")
-        return
+    legacy_restored = 0
+    backup_path = path + ".orig"
+    if os.path.isfile(backup_path):
+        with open(backup_path, "rb") as f:
+            orig = f.read()
+        for off in ICNF_LEGACY_RESTORE_OFFSETS:
+            if off < len(data) and off < len(orig) and data[off] != orig[off]:
+                data[off] = orig[off]
+                legacy_restored += 1
 
-    # The down_area field is 58 bytes; overwrite from idx onward
-    new_bytes = ICNF_NEW_PATH.ljust(58, b"\x00")
-    data[idx : idx + 58] = new_bytes
-    print(f"  [I.CNF] Replaced download path: {ICNF_OLD_PATH.decode()} → D:\\")
+    idx = data.find(ICNF_OLD_PATH)
+    path_updated = False
+    if idx != -1:
+        # The down_area field is 58 bytes; overwrite from idx onward
+        new_bytes = ICNF_NEW_PATH.ljust(58, b"\x00")
+        data[idx : idx + 58] = new_bytes
+        path_updated = True
+
+    if not path_updated and legacy_restored == 0:
+        print("  [I.CNF] No updates needed — skipping")
+        return
 
     with open(path, "wb") as f:
         f.write(data)
+
+    if path_updated:
+        print(f"  [I.CNF] Replaced download path: {ICNF_OLD_PATH.decode()} → D:\\")
+    else:
+        print("  [I.CNF] Download path not found — left as-is")
+    if legacy_restored > 0:
+        print(
+            f"  [I.CNF] Restored {legacy_restored} legacy-touched "
+            f"offset{'s' if legacy_restored != 1 else ''} from .orig"
+        )
 
 
 # ─── I.TEL patcher ───────────────────────────────────────────────────────────
@@ -108,16 +133,25 @@ def patch_itel(path: str) -> None:
     legacy_telnum = pad(LEGACY_BRIDGE_TELNUM, 17)
     kept_entries = []
     removed = 0
+    han_updated = 0
     for i in range(entry_count):
         chunk = body[i * ITEL_ENTRY_SIZE : (i + 1) * ITEL_ENTRY_SIZE]
         fields = struct.unpack(ITEL_ENTRY_FMT, chunk)
         if fields[1] == legacy_telnum:
             removed += 1
             continue
-        kept_entries.append(chunk)
+        # Force Hangul mode to 완성형 (0) so terminal text matches bridge EUC-KR handling.
+        # fields: name, telnum, brate, parity, dbit, sbit, han, hlp
+        if fields[6] != HANGUL_MODE_WANSUNG:
+            fields = fields[:6] + (HANGUL_MODE_WANSUNG,) + fields[7:]
+            han_updated += 1
+        kept_entries.append(struct.pack(ITEL_ENTRY_FMT, *fields))
 
-    if removed == 0:
-        print(f"  [I.TEL] No legacy bridge entry ({LEGACY_BRIDGE_TELNUM}) found — skipping")
+    if removed == 0 and han_updated == 0:
+        print(
+            f"  [I.TEL] No legacy bridge entry ({LEGACY_BRIDGE_TELNUM}) and "
+            "all entries already 완성형 — skipping"
+        )
         return
 
     new_body = b"".join(kept_entries)
@@ -128,7 +162,8 @@ def patch_itel(path: str) -> None:
     print(
         f"  [I.TEL] Removed {removed} legacy bridge entr"
         f"{'y' if removed == 1 else 'ies'} "
-        f"({LEGACY_BRIDGE_TELNUM}); total entries: {entry_count - removed}"
+        f"({LEGACY_BRIDGE_TELNUM}); forced 완성형 on {han_updated} "
+        f"entr{'y' if han_updated == 1 else 'ies'}; total entries: {entry_count - removed}"
     )
 
 
