@@ -23,7 +23,7 @@
 프로그램입니다.</li>
 <li>이 프로젝트는 모뎀 대신 다음 경로로 비비에스(BBS)에 연결합니다.</li>
 <li><code>이야기 5.3</code> -&gt; <code>도스박스 가상 모뎀</code> -&gt;
-<code>Go 브리지(bridge) 프로그램</code> -&gt;
+<code>브리지(bridge)</code> -&gt;
 <code>SSH 서버(또는 비비에스(BBS))</code></li>
 <li>기본 구성은 <code>SSH_AUTH_MODE=bbs</code>이며, SSH 키 없이 세션을
 열고 BBS 내부 로그인(ID/PW)을 사용하는 시나리오를 기본으로 둡니다.</li>
@@ -33,9 +33,7 @@
 <div class="sourceCode" id="cb1"><pre
 class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">bash</span> tools/run-direct.sh</span></code></pre></div>
 <h3 id="2-2-appimage-실행">2-2. AppImage 실행</h3>
-<div class="sourceCode" id="cb2"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">bash</span> tools/run-appimage.sh</span></code></pre></div>
-<p>또는 AppImage 직접 실행:</p>
+<p>AppImage 직접 실행:</p>
 <div class="sourceCode" id="cb3"><pre
 class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">./dist/IYAGI-linux-x86_64.AppImage</span></span></code></pre></div>
 <h2 id="3-첫-실행-시-설정-파일">3) 첫 실행 시 설정 파일</h2>
@@ -105,17 +103,9 @@ SSH_AUTH_MODE=bbs</code></pre>
 <p>이 프로젝트는 빌드 시 <code>scripts/configure_iyagi.py</code>로
 이야기 설정 파일을 자동 패치합니다.</p>
 <ul>
-<li>과거 <code>127.0.0.1:2323</code> 고정 항목은 제거</li>
 <li>COM4 -&gt; 브리지(bridge) 프로그램(<code>BRIDGE_PORT</code>) 경로
 사용</li>
 <li>다운로드 경로를 패키지 구조에 맞게 조정</li>
-</ul>
-<p>수동 조정이 필요하면 이야기 내부의 전화번호부/통신설정 메뉴에서 다음
-개념을 확인하세요.</p>
-<ul>
-<li>통신 속도(BPS)</li>
-<li>패리티/데이터비트/스톱비트</li>
-<li>Flow Control(XON/XOFF, RTS/CTS)</li>
 </ul>
 <h2 id="6-파일-전송-zmodem">6) 파일 전송 (ZMODEM)</h2>
 <p>이야기 5.3는 ZMODEM 전송을 지원합니다.</p>
@@ -130,6 +120,10 @@ SSH_AUTH_MODE=bbs</code></pre>
 <li>직접 실행 기본값: <code>iyagi-data/downloads/</code></li>
 <li>AppImage 기본값:
 <code>${XDG_DATA_HOME:-~/.local/share}/iyagi-terminal/downloads/</code></li>
+<li>Windows 패키지(<code>launch.bat</code>) 기본값:
+<code>(설치/압축 해제 폴더)\downloads\</code></li>
+<li>macOS <code>.app</code> 런처 기본값:
+<code>~/Library/Application Support/IYAGI/downloads/</code></li>
 </ul>
 <h2 id="7-자주-쓰는-조작">7) 자주 쓰는 조작</h2>
 <p>원본 도움말(<code>I.HLP</code>) 기준으로 F1 도움말 체계가
@@ -141,17 +135,6 @@ SSH_AUTH_MODE=bbs</code></pre>
 <p>주의: 배포본/키맵 파일(<code>KEY.DEF</code>)에 따라 일부 단축키
 체계가 달라질 수 있으므로, 실제 사용 중에는 <code>F1</code> 도움말을
 우선 기준으로 보세요.</p>
-<h2 id="8-스크립트-기능">8) 스크립트 기능</h2>
-<p>원본 도움말과 <code>NEW.DOC</code>에 따르면 이야기 5.3는
-스크립트(자동화) 기능을 제공합니다.</p>
-<ul>
-<li>대기 문자열(<code>Wait_str</code>)</li>
-<li>문자열 송신(<code>Send_str</code>)</li>
-<li>분기(<code>If/Else</code>)</li>
-<li>지연(<code>Delay</code>)</li>
-<li>업/다운로드 호출</li>
-</ul>
-<p>자동 로그인/자동 메뉴 진입 같은 반복 작업을 줄일 때 유용합니다.</p>
 <h2 id="9-문제-해결">9) 문제 해결</h2>
 <h3 id="9-1-키-폴더가-보이는데-필요한가">9-1. 키 폴더가 보이는데
 필요한가?</h3>
@@ -159,6 +142,9 @@ SSH_AUTH_MODE=bbs</code></pre>
 <li>기본 <code>SSH_AUTH_MODE=bbs</code>에서는 필요 없습니다.</li>
 <li><code>SSH_AUTH_MODE=key</code>일 때만 <code>iyagi-data/keys</code>를
 사용합니다.</li>
+<li><code>keys</code> 폴더는 SSH 키 인증에 쓰는 개인키/공개키 파일을 보관하는
+위치입니다. 즉, 서버에 비밀번호 대신 키로 로그인할 때만 사용됩니다.</li>
+<li>기본 BBS 모드에서는 키 인증을 쓰지 않으므로, 폴더가 비어 있어도 정상입니다.</li>
 </ul>
 <h3 id="9-2-창이-너무-크거나-일부만-채워짐">9-2. 창이 너무 크거나 일부만
 채워짐</h3>
@@ -172,9 +158,9 @@ SSH_AUTH_MODE=bbs</code></pre>
 <li>부드러움: <code>DOSBOX_X_SCALER="hq2x forced"</code></li>
 </ul></li>
 </ul>
-<h3 id="9-3-메뉴바상단-dosbox-x-메뉴-숨기기">9-3. 메뉴바(상단 도스박스-X
+<h3 id="9-3-메뉴바상단-dosbox-메뉴-숨기기">9-3. 메뉴바(상단 도스박스
 메뉴) 숨기기</h3>
-<p>현재 런처는 도스박스-X 실행 시 메뉴를 숨기도록 설정되어 있습니다.</p>
+<p>현재 런처는 도스박스 실행 시 메뉴를 숨기도록 설정되어 있습니다.</p>
 <h2 id="10-원문-자료">10) 원문 자료</h2>
 <ul>
 <li><a href="http://pds.dnavi.info/DOSUTIL/121391">DNAVI DOS UTIL -

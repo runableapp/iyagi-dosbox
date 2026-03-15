@@ -307,6 +307,13 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 }
 
 func runConnectedSession(conn net.Conn, input io.Reader, sessionID, execPath string, execArgs []string, sendConnect bool, debugEnabled bool, clientEncoding, serverEncoding string, serverRepairMojibake bool, preConnect func() error, ctrlCHangup bool) error {
+	// This function may set a read deadline to unblock the client read loop when
+	// the remote session exits. Clear it before returning so command mode can
+	// continue accepting AT commands after NO CARRIER.
+	defer func() {
+		_ = conn.SetReadDeadline(time.Time{})
+	}()
+
 	c := exec.Command(execPath, execArgs...)
 
 	stdin, err := c.StdinPipe()
