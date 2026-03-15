@@ -39,6 +39,47 @@ a:hover { color: var(--accent2); text-decoration: none; }
  color: #ffffff;
 }
 
+.lang-switch {
+ position: absolute;
+ top: 1rem;
+ left: 1rem;
+ display: inline-flex;
+ gap: 0.5rem;
+ align-items: center;
+ font-size: 0.85rem;
+ z-index: 2;
+}
+
+.lang-btn {
+ padding: 0.2rem 0.5rem;
+ border: 1px solid var(--border);
+ color: var(--accent);
+ background: #0000aa;
+ font-family: inherit;
+ font-size: inherit;
+ cursor: pointer;
+}
+
+.lang-btn:hover,
+.lang-btn:focus-visible {
+ background: #000077;
+ color: #ffff55;
+ outline: none;
+}
+
+.lang-btn.is-active {
+ color: #ffff55;
+ background: #000077;
+}
+
+@media (max-width: 720px) {
+ .lang-switch {
+  position: static;
+  justify-content: center;
+  margin-bottom: 1rem;
+ }
+}
+
 .support-float-btn {
  position: fixed;
  top: 1rem;
