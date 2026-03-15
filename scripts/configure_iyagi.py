@@ -69,6 +69,17 @@ def pad(s: str, length: int) -> bytes:
     return b[:length].ljust(length, b"\x00")
 
 
+def configure_stdio_for_windows_ci() -> None:
+    """Avoid UnicodeEncodeError on non-UTF8 consoles (e.g. Windows GitHub Actions)."""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None:
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(errors="backslashreplace")
+
+
 # ─── I.CNF patcher ───────────────────────────────────────────────────────────
 
 def patch_icnf(path: str) -> None:
@@ -94,16 +105,16 @@ def patch_icnf(path: str) -> None:
         path_updated = True
 
     if not path_updated and legacy_restored == 0:
-        print("  [I.CNF] No updates needed — skipping")
+        print("  [I.CNF] No updates needed -- skipping")
         return
 
     with open(path, "wb") as f:
         f.write(data)
 
     if path_updated:
-        print(f"  [I.CNF] Replaced download path: {ICNF_OLD_PATH.decode()} → D:\\")
+        print(f"  [I.CNF] Replaced download path: {ICNF_OLD_PATH.decode()} -> D:\\")
     else:
-        print("  [I.CNF] Download path not found — left as-is")
+        print("  [I.CNF] Download path not found -- left as-is")
     if legacy_restored > 0:
         print(
             f"  [I.CNF] Restored {legacy_restored} legacy-touched "
@@ -120,7 +131,7 @@ def patch_itel(path: str) -> None:
     # Locate the header sentinel (0x1A) to find where entries begin
     sentinel_idx = data.find(bytes([ITEL_HEADER_SENTINEL]))
     if sentinel_idx == -1:
-        print(f"  [I.TEL] Header sentinel 0x1A not found — cannot patch")
+        print(f"  [I.TEL] Header sentinel 0x1A not found -- cannot patch")
         return
 
     header = data[: sentinel_idx + 1]          # bytes 0..sentinel (inclusive)
@@ -140,7 +151,7 @@ def patch_itel(path: str) -> None:
         if fields[1] == legacy_telnum:
             removed += 1
             continue
-        # Force Hangul mode to 완성형 (0) so terminal text matches bridge EUC-KR handling.
+        # Force Hangul mode to WANSUNG (0) so terminal text matches bridge EUC-KR handling.
         # fields: name, telnum, brate, parity, dbit, sbit, han, hlp
         if fields[6] != HANGUL_MODE_WANSUNG:
             fields = fields[:6] + (HANGUL_MODE_WANSUNG,) + fields[7:]
@@ -150,7 +161,7 @@ def patch_itel(path: str) -> None:
     if removed == 0 and han_updated == 0:
         print(
             f"  [I.TEL] No legacy bridge entry ({LEGACY_BRIDGE_TELNUM}) and "
-            "all entries already 완성형 — skipping"
+            "all entries already WANSUNG -- skipping"
         )
         return
 
@@ -162,7 +173,7 @@ def patch_itel(path: str) -> None:
     print(
         f"  [I.TEL] Removed {removed} legacy bridge entr"
         f"{'y' if removed == 1 else 'ies'} "
-        f"({LEGACY_BRIDGE_TELNUM}); forced 완성형 on {han_updated} "
+        f"({LEGACY_BRIDGE_TELNUM}); forced WANSUNG on {han_updated} "
         f"entr{'y' if han_updated == 1 else 'ies'}; total entries: {entry_count - removed}"
     )
 
@@ -191,7 +202,7 @@ def main() -> None:
             shutil.copy2(icnf_path, backup)
         patch_icnf(icnf_path)
     else:
-        print(f"  [I.CNF] Not found at {icnf_path} — skipping")
+        print(f"  [I.CNF] Not found at {icnf_path} -- skipping")
 
     if os.path.isfile(itel_path):
         backup = itel_path + ".orig"
@@ -199,10 +210,11 @@ def main() -> None:
             shutil.copy2(itel_path, backup)
         patch_itel(itel_path)
     else:
-        print(f"  [I.TEL] Not found at {itel_path} — skipping")
+        print(f"  [I.TEL] Not found at {itel_path} -- skipping")
 
     print("Done.")
 
 
 if __name__ == "__main__":
+    configure_stdio_for_windows_ci()
     main()
