@@ -160,6 +160,9 @@ jobs:
 
           [Run]
           Filename: "{app}\launch.bat"; Description: "Launch IYAGI Terminal"; Flags: nowait postinstall skipifsilent
+
+          [UninstallDelete]
+          Type: filesandordirs; Name: "{app}"
           '@
           New-Item -ItemType Directory -Path ".build/windows" -Force | Out-Null
           Set-Content -Path ".build/windows/iyagi.iss" -Value $iss
