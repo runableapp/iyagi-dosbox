@@ -113,14 +113,16 @@ jobs:
           Copy-Item "resources/windows/launch.bat" "$pkg/launch.bat" -Force
 
       - name: Convert icon (webp to ico)
+        shell: pwsh
         run: |
-          python - << 'PYEOF'
+          $py = @'
           from PIL import Image
           src = "resources/iyagi-icon.webp"
           dst = "dist/win/IYAGI/iyagi.ico"
           im = Image.open(src).convert("RGBA")
           im.save(dst, format="ICO", sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
-          PYEOF
+          '@
+          python -c $py
 
       - name: Install Inno Setup
         shell: pwsh
