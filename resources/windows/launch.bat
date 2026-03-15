@@ -33,7 +33,7 @@ if not exist "%PKG%.env" (
     copy "%PKG%.env.example" "%PKG%.env" >nul
     echo.
     echo === First run: created config at %PKG%.env
-    echo     Edit it to set IYAGI_HOST and IYAGI_USER, then re-run.
+    echo     Edit it if needed (IYAGI_USER, ports), then re-run.
     echo.
     notepad "%PKG%.env"
     pause
@@ -44,7 +44,6 @@ for /f "usebackq eol=# tokens=1,* delims==" %%A in ("%PKG%.env") do (
     set "%%A=%%B"
 )
 
-if not defined IYAGI_HOST set "IYAGI_HOST=your-server.com"
 if not defined IYAGI_USER set "IYAGI_USER=user"
 if not defined IYAGI_SSH_PORT set "IYAGI_SSH_PORT=22"
 if not defined BRIDGE_BUSY_GAP_MS set "BRIDGE_BUSY_GAP_MS=0"
@@ -97,7 +96,7 @@ if not exist "%KEY_FILE%" (
     echo === First run: generating SSH key pair ===
     "%PUTTYGEN%" -t rsa -b 4096 -o "%KEY_FILE%" --comment "iyagi-terminal"
     echo.
-    echo >>> Add the public key below to ~/.ssh/authorized_keys on %IYAGI_HOST%:
+    echo ^>^>^> Add the public key below to your SSH server's ~/.ssh/authorized_keys:
     echo.
     "%PUTTYGEN%" -L "%KEY_FILE%"
     echo.
@@ -106,10 +105,12 @@ if not exist "%KEY_FILE%" (
 
 :: ─── Start the bridge ───────────────────────────────────────────────────────
 
-set "BRIDGE_CMD=%PLINK% -P %IYAGI_SSH_PORT% -t -i "%KEY_FILE%" %IYAGI_USER%@%IYAGI_HOST%"
+set "SSH_TEMPLATE=%PLINK% -P {port} -t -i ""%KEY_FILE%"" {userhost}"
 
 set "BRIDGE_PORT=%BRIDGE_PORT%"
-set "BRIDGE_CMD=%BRIDGE_CMD%"
+set "BRIDGE_CMD="
+set "BRIDGE_CMD_TEMPLATE=%SSH_TEMPLATE%"
+set "BRIDGE_SSH_USER=%IYAGI_USER%"
 set "BRIDGE_BUSY_GAP_MS=%BRIDGE_BUSY_GAP_MS%"
 set "BRIDGE_DTMF_GAP_MS=%BRIDGE_DTMF_GAP_MS%"
 set "BRIDGE_POST_DTMF_DELAY_MS=%BRIDGE_POST_DTMF_DELAY_MS%"

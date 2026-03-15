@@ -145,14 +145,14 @@ jobs:
           Compression=lzma
           SolidCompression=yes
           WizardStyle=modern
-          OutputDir=dist/win
+          OutputDir=..\..\dist\win
           OutputBaseFilename=IYAGI-windows-installer
           PrivilegesRequired=lowest
-          SetupIconFile=dist\win\IYAGI\iyagi.ico
+          SetupIconFile=..\..\dist\win\IYAGI\iyagi.ico
           UninstallDisplayIcon={app}\iyagi.ico
 
           [Files]
-          Source: "dist\win\IYAGI\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+          Source: "..\..\dist\win\IYAGI\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
           [Icons]
           Name: "{autoprograms}\IYAGI Terminal"; Filename: "{app}\launch.bat"; IconFilename: "{app}\iyagi.ico"

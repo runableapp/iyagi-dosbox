@@ -113,13 +113,12 @@ mkdir -p "$APP_DIR" "$DOWNLOADS_DIR" "$RUN_DIR" "$(dirname "$BRIDGE_BIN")"
 if [ ! -f "$ENV_FILE" ]; then
     cp "$REPO_ROOT/resources/common/.env.example" "$ENV_FILE"
     echo "Created config: $ENV_FILE"
-    echo "Set IYAGI_HOST and IYAGI_USER before connecting."
+    echo "Set IYAGI_USER if needed before connecting."
 fi
 
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 IYAGI_PREPARED_DIR="${IYAGI_PREPARED_DIR:-$(python3 "$REPO_ROOT/scripts/prepare_iyagi_source.py")}"
-IYAGI_HOST="${IYAGI_HOST:-your-server.com}"
 IYAGI_USER="${IYAGI_USER:-user}"
 IYAGI_SSH_PORT="${IYAGI_SSH_PORT:-22}"
 BRIDGE_PORT="${BRIDGE_PORT:-2323}"
@@ -185,7 +184,7 @@ case "$SSH_AUTH_MODE" in
             echo "Generating SSH key pair for bridge auth..."
             ssh-keygen -t rsa -b 4096 -f "$KEY_FILE" -N "" -C "iyagi-terminal"
             echo ""
-            echo "Add this public key to ~/.ssh/authorized_keys on $IYAGI_HOST:"
+            echo "Add this public key to your SSH server's ~/.ssh/authorized_keys:"
             echo ""
             cat "${KEY_FILE}.pub"
             echo ""
@@ -251,7 +250,7 @@ echo "Bridge busy repeat: ${BRIDGE_BUSY_REPEAT}"
 echo "Bridge busy gap: ${BRIDGE_BUSY_GAP_MS}ms"
 echo "Bridge DTMF gap: ${BRIDGE_DTMF_GAP_MS}ms"
 echo "Bridge post-DTMF delay: ${BRIDGE_POST_DTMF_DELAY_MS}ms"
-echo "Bridge ATDT target mode: enabled (example: ATDT${IYAGI_HOST}:${IYAGI_SSH_PORT})"
+echo "Bridge ATDT target mode: enabled (example: ATDT127.0.0.1:${IYAGI_SSH_PORT})"
 BRIDGE_PORT="$BRIDGE_PORT" \
 BRIDGE_CMD="" \
 BRIDGE_CMD_TEMPLATE="$SSH_TEMPLATE" \

@@ -70,10 +70,8 @@ class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="
 <li>런처 기본값(<code>${VAR:-default}</code>)</li>
 </ol>
 <p>현재 접속 모델은 <code>ATDT &lt;host&gt;:&lt;port&gt;</code> 직접
-다이얼이므로, <code>IYAGI_HOST</code>/<code>IYAGI_USER</code>는 필수값이
-아니라 기본 힌트용입니다.</p>
-<pre class="dotenv"><code>IYAGI_HOST=접속할_서버
-IYAGI_USER=ssh_접속_계정
+다이얼이므로, 호스트는 항상 다이얼 문자열에서 결정됩니다.</p>
+<pre class="dotenv"><code>IYAGI_USER=ssh_접속_계정
 BRIDGE_PORT=2323
 SSH_AUTH_MODE=bbs</code></pre>
 <p>주요 옵션:</p>

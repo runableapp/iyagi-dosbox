@@ -113,7 +113,7 @@ if [ ! -f "$ENV_FILE" ]; then
     cp "$APPDIR/.env.example" "$ENV_FILE"
     echo ""
     echo "=== First run: created config file at $ENV_FILE"
-    echo "    Edit it to set IYAGI_HOST and IYAGI_USER, then re-run."
+    echo "    Edit it if needed (IYAGI_USER, ports), then re-run."
     echo ""
     read -rp "Press ENTER to open it now (or Ctrl+C to exit and edit manually)..."
     "${EDITOR:-nano}" "$ENV_FILE"
@@ -122,7 +122,6 @@ fi
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 
-IYAGI_HOST="${IYAGI_HOST:-your-server.com}"
 IYAGI_USER="${IYAGI_USER:-user}"
 IYAGI_SSH_PORT="${IYAGI_SSH_PORT:-22}"
 BRIDGE_PORT="${BRIDGE_PORT:-2323}"
@@ -305,7 +304,7 @@ case "$SSH_AUTH_MODE" in
             echo "=== First run: generating SSH key pair ==="
             ssh-keygen -t rsa -b 4096 -f "$KEY_FILE" -N "" -C "iyagi-terminal"
             echo ""
-            echo ">>> Add the public key below to ~/.ssh/authorized_keys on $IYAGI_HOST:"
+            echo ">>> Add the public key below to your SSH server's ~/.ssh/authorized_keys:"
             echo ""
             cat "${KEY_FILE}.pub"
             echo ""
@@ -333,7 +332,7 @@ echo "Bridge busy repeat: ${BRIDGE_BUSY_REPEAT}"
 echo "Bridge busy gap: ${BRIDGE_BUSY_GAP_MS}ms"
 echo "Bridge DTMF gap: ${BRIDGE_DTMF_GAP_MS}ms"
 echo "Bridge post-DTMF delay: ${BRIDGE_POST_DTMF_DELAY_MS}ms"
-echo "Bridge ATDT target mode: enabled (example: ATDT${IYAGI_HOST}:${IYAGI_SSH_PORT})"
+echo "Bridge ATDT target mode: enabled (example: ATDT127.0.0.1:${IYAGI_SSH_PORT})"
 
 BRIDGE_PORT="$BRIDGE_PORT" \
 BRIDGE_CMD="" \
