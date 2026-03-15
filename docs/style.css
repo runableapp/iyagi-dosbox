@@ -31,7 +31,13 @@ body {
 a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--accent2); text-decoration: none; }
 
-.container { max-width: 980px; margin: 0 auto; padding: 2rem; }
+.container {
+ max-width: 980px;
+ margin: 0 auto;
+ padding: 2rem;
+ background: #0000aa;
+ color: #ffffff;
+}
 
 .support-float-btn {
  position: fixed;
