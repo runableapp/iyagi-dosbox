@@ -219,6 +219,6 @@ Override both with:
 
 ## Legal note
 
-IYAGI is freeware but not open source.  
-This project wraps and launches it; verify redistribution rights for your target distribution channel.
+This project is licensed under **PolyForm Noncommercial 1.0.0**.  
+IYAGI is freeware but not open source; verify redistribution rights for your target distribution channel.
 
