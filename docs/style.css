@@ -151,6 +151,22 @@ header .tagline {
  image-rendering: pixelated;
 }
 
+.header-actions {
+ display: flex;
+ align-items: center;
+ justify-content: center;
+ gap: 0.75rem;
+ flex-wrap: wrap;
+ margin-top: 1rem;
+}
+
+.header-actions .btn {
+ margin-top: 0;
+ display: inline-flex;
+ align-items: center;
+ justify-content: center;
+}
+
 .hero-graphic {
  margin: 2rem auto;
  max-width: 500px;

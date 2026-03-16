@@ -19,6 +19,8 @@ const I18N = {
     heroTagline: "도스 통신 감성을 그대로 살려 비비에스(BBS)로 연결하는 실행 환경을 제공하여 추억을 되살립니다.",
     githubBtnText: "GitHub 저장소 보기",
     githubBtnAria: "GitHub 저장소 보기",
+    releaseBtnText: "💾 프로그램 다운받기",
+    releaseBtnAria: "💾 프로그램 다운받기",
     aboutTitle: "◆ \"이야기 도스박스\"가 무엇인가요?",
     aboutP1:
       "<span class=\"iyagi-word-wrap\"><span class=\"iyagi-word\">이야기" +
@@ -89,6 +91,8 @@ const I18N = {
     heroTagline: "Relive the classic dial-up BBS feeling with a ready-to-run package.",
     githubBtnText: "View on GitHub",
     githubBtnAria: "View GitHub repository",
+    releaseBtnText: "💾 Download Program",
+    releaseBtnAria: "💾 Download program",
     aboutTitle: "◆ What is \"Iyagi DOSBox\"?",
     aboutP1:
       "<span class=\"iyagi-word-wrap\"><span class=\"iyagi-word\">IYAGI" +
@@ -159,6 +163,8 @@ const I18N = {
     heroTagline: "尽可能还原 DOS 拨号通信手感，并提供可直接连接 BBS 的运行环境。",
     githubBtnText: "查看 GitHub 仓库",
     githubBtnAria: "查看 GitHub 仓库",
+    releaseBtnText: "💾 下载程序",
+    releaseBtnAria: "💾 下载程序",
     aboutTitle: "◆ 什么是 \"Iyagi DOSBox\"？",
     aboutP1:
       "<span class=\"iyagi-word-wrap\"><span class=\"iyagi-word\">IYAGI" +
@@ -228,6 +234,8 @@ const I18N = {
     heroTagline: "DOS通信の感覚をそのままに、BBSへ接続できる実行環境を提供します。",
     githubBtnText: "GitHub リポジトリを見る",
     githubBtnAria: "GitHub リポジトリを見る",
+    releaseBtnText: "💾 プログラムをダウンロード",
+    releaseBtnAria: "💾 プログラムをダウンロード",
     aboutTitle: "◆ 「Iyagi DOSBox」とは？",
     aboutP1:
       "<span class=\"iyagi-word-wrap\"><span class=\"iyagi-word\">IYAGI" +
@@ -327,6 +335,8 @@ function applyLanguage(lang) {
   setText("heroTagline", locale.heroTagline);
   setText("githubBtnText", locale.githubBtnText);
   setAttr("githubBtn", "aria-label", locale.githubBtnAria);
+  setText("releaseBtnText", locale.releaseBtnText);
+  setAttr("releaseBtn", "aria-label", locale.releaseBtnAria);
 
   setText("aboutTitle", locale.aboutTitle);
   setHtml("aboutP1", locale.aboutP1);
