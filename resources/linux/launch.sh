@@ -145,7 +145,13 @@ SSH_AUTH_MODE="${SSH_AUTH_MODE:-bbs}"
 BRIDGE_CLIENT_ENCODING="${BRIDGE_CLIENT_ENCODING:-euc-kr}"
 BRIDGE_SERVER_ENCODING="${BRIDGE_SERVER_ENCODING:-euc-kr}"
 BRIDGE_SERVER_REPAIR_MOJIBAKE="${BRIDGE_SERVER_REPAIR_MOJIBAKE:-1}"
+BRIDGE_ANSI_RESET_HACK="${BRIDGE_ANSI_RESET_HACK:-0}"
+BRIDGE_ANSI_COLOR_COMPAT_HACK="${BRIDGE_ANSI_COLOR_COMPAT_HACK:-1}"
+BRIDGE_ANSI_DEFAULT_FG="${BRIDGE_ANSI_DEFAULT_FG:-37}"
+BRIDGE_ANSI_DEFAULT_BG="${BRIDGE_ANSI_DEFAULT_BG:-44}"
+BRIDGE_ANSI_DEFAULT_MODE="${BRIDGE_ANSI_DEFAULT_MODE:-sgr}"
 BRIDGE_DEBUG="${BRIDGE_DEBUG:-0}"
+BRIDGE_DEBUG_RENDER_SERVER="${BRIDGE_DEBUG_RENDER_SERVER:-0}"
 BRIDGE_CTRL_C_HANGUP="${BRIDGE_CTRL_C_HANGUP:-1}"
 BRIDGE_CONNECT_TIMEOUT_SEC="${BRIDGE_CONNECT_TIMEOUT_SEC:-5}"
 BRIDGE_BUSY_REPEAT="${BRIDGE_BUSY_REPEAT:-5}"
@@ -356,6 +362,9 @@ echo "Bridge Ctrl+C hangup: ${BRIDGE_CTRL_C_HANGUP}"
 echo "Bridge connect timeout: ${BRIDGE_CONNECT_TIMEOUT_SEC}s"
 echo "Bridge busy repeat: ${BRIDGE_BUSY_REPEAT}"
 echo "Bridge busy gap: ${BRIDGE_BUSY_GAP_MS}ms"
+echo "Bridge ANSI reset hack: ${BRIDGE_ANSI_RESET_HACK}"
+echo "Bridge ANSI color compat: ${BRIDGE_ANSI_COLOR_COMPAT_HACK} (default fg=${BRIDGE_ANSI_DEFAULT_FG} bg=${BRIDGE_ANSI_DEFAULT_BG} mode=${BRIDGE_ANSI_DEFAULT_MODE})"
+echo "Bridge debug render server: ${BRIDGE_DEBUG_RENDER_SERVER}"
 echo "Bridge DTMF gap: ${BRIDGE_DTMF_GAP_MS}ms"
 echo "Bridge post-DTMF delay: ${BRIDGE_POST_DTMF_DELAY_MS}ms"
 echo "Bridge ATDT target mode: enabled (example: ATDT127.0.0.1:${IYAGI_SSH_PORT})"
@@ -367,7 +376,13 @@ BRIDGE_SSH_USER="$IYAGI_USER" \
 BRIDGE_CLIENT_ENCODING="$BRIDGE_CLIENT_ENCODING" \
 BRIDGE_SERVER_ENCODING="$BRIDGE_SERVER_ENCODING" \
 BRIDGE_SERVER_REPAIR_MOJIBAKE="$BRIDGE_SERVER_REPAIR_MOJIBAKE" \
+BRIDGE_ANSI_RESET_HACK="$BRIDGE_ANSI_RESET_HACK" \
+BRIDGE_ANSI_COLOR_COMPAT_HACK="$BRIDGE_ANSI_COLOR_COMPAT_HACK" \
+BRIDGE_ANSI_DEFAULT_FG="$BRIDGE_ANSI_DEFAULT_FG" \
+BRIDGE_ANSI_DEFAULT_BG="$BRIDGE_ANSI_DEFAULT_BG" \
+BRIDGE_ANSI_DEFAULT_MODE="$BRIDGE_ANSI_DEFAULT_MODE" \
 BRIDGE_DEBUG="$BRIDGE_DEBUG" \
+BRIDGE_DEBUG_RENDER_SERVER="$BRIDGE_DEBUG_RENDER_SERVER" \
 BRIDGE_CTRL_C_HANGUP="$BRIDGE_CTRL_C_HANGUP" \
 BRIDGE_CONNECT_TIMEOUT_SEC="$BRIDGE_CONNECT_TIMEOUT_SEC" \
 BRIDGE_BUSY_REPEAT="$BRIDGE_BUSY_REPEAT" \
@@ -510,12 +525,21 @@ run_dosbox_plain() {
 
 DOSBOX_RC=1
 
+should_retry_backend() {
+    local rc="$1"
+    # User interrupts should not trigger backend fallback relaunch.
+    if [ "$rc" -eq 130 ] || [ "$rc" -eq 143 ]; then
+        return 1
+    fi
+    [ "$rc" -ne 0 ]
+}
+
 # For DOSBox-X, prefer a plain launch (no forced SDL backend env vars) so
 # behavior matches run-direct.sh and avoids backend-specific window quirks.
 if [ "$IS_DOSBOX_X" -eq 1 ]; then
     run_dosbox_plain "dosbox-x direct" "primary"
     DOSBOX_RC=$?
-    if [ "$DOSBOX_RC" -ne 0 ]; then
+    if should_retry_backend "$DOSBOX_RC"; then
         echo "DOSBox-X direct primary profile failed; trying fallback profile..."
         run_dosbox_plain "dosbox-x direct fallback profile" "fallback"
         DOSBOX_RC=$?
@@ -528,7 +552,7 @@ elif [ "$DOSBOX_VIDEO_BACKEND" = "wayland" ]; then
         SDL_VIDEO_WAYLAND_PREFER_LIBDECOR=1 \
         LIBGL_ALWAYS_SOFTWARE=1
     DOSBOX_RC=$?
-    if [ "$DOSBOX_RC" -ne 0 ] && [ "$IS_DOSBOX_X" -eq 1 ]; then
+    if should_retry_backend "$DOSBOX_RC" && [ "$IS_DOSBOX_X" -eq 1 ]; then
         echo "Wayland primary profile failed; trying DOSBox-X fallback profile..."
         run_dosbox_with_env "wayland (forced fallback profile)" "fallback" \
             SDL_VIDEODRIVER=wayland \
@@ -544,7 +568,7 @@ elif [ "$DOSBOX_VIDEO_BACKEND" = "x11" ]; then
         SDL_RENDER_DRIVER=software \
         LIBGL_ALWAYS_SOFTWARE=1
     DOSBOX_RC=$?
-    if [ "$DOSBOX_RC" -ne 0 ] && [ "$IS_DOSBOX_X" -eq 1 ]; then
+    if should_retry_backend "$DOSBOX_RC" && [ "$IS_DOSBOX_X" -eq 1 ]; then
         echo "X11 primary profile failed; trying DOSBox-X fallback profile..."
         run_dosbox_with_env "x11 (forced fallback profile)" "fallback" \
             SDL_VIDEODRIVER=x11 \
@@ -563,7 +587,7 @@ else
                 SDL_VIDEO_WAYLAND_PREFER_LIBDECOR=1 \
                 LIBGL_ALWAYS_SOFTWARE=1
             DOSBOX_RC=$?
-            if [ "$DOSBOX_RC" -ne 0 ] && [ "$IS_DOSBOX_X" -eq 1 ]; then
+            if should_retry_backend "$DOSBOX_RC" && [ "$IS_DOSBOX_X" -eq 1 ]; then
                 echo "Wayland primary profile failed; trying DOSBox-X fallback profile..."
                 run_dosbox_with_env "wayland (auto strict fallback profile)" "fallback" \
                     SDL_VIDEODRIVER=wayland \
@@ -573,14 +597,14 @@ else
                     LIBGL_ALWAYS_SOFTWARE=1
                 DOSBOX_RC=$?
             fi
-            if [ "$DOSBOX_RC" -ne 0 ] && [ -n "${DISPLAY:-}" ]; then
+            if should_retry_backend "$DOSBOX_RC" && [ -n "${DISPLAY:-}" ]; then
                 echo "Wayland backend failed; trying x11 fallback..."
                 run_dosbox_with_env "x11 (fallback)" "primary" \
                     SDL_VIDEODRIVER=x11 \
                     SDL_RENDER_DRIVER=software \
                     LIBGL_ALWAYS_SOFTWARE=1
                 DOSBOX_RC=$?
-                if [ "$DOSBOX_RC" -ne 0 ] && [ "$IS_DOSBOX_X" -eq 1 ]; then
+                if should_retry_backend "$DOSBOX_RC" && [ "$IS_DOSBOX_X" -eq 1 ]; then
                     echo "X11 primary profile failed; trying DOSBox-X fallback profile..."
                     run_dosbox_with_env "x11 (fallback fallback profile)" "fallback" \
                         SDL_VIDEODRIVER=x11 \
@@ -597,7 +621,7 @@ else
                 SDL_RENDER_DRIVER=software \
                 LIBGL_ALWAYS_SOFTWARE=1
             DOSBOX_RC=$?
-            if [ "$DOSBOX_RC" -ne 0 ]; then
+            if should_retry_backend "$DOSBOX_RC"; then
                 echo "x11 preferred backend failed; trying wayland fallback..."
                 run_dosbox_with_env "wayland (auto fallback)" "primary" \
                     SDL_VIDEODRIVER=wayland \
@@ -607,7 +631,7 @@ else
                     LIBGL_ALWAYS_SOFTWARE=1
                 DOSBOX_RC=$?
             fi
-            if [ "$DOSBOX_RC" -ne 0 ] && [ "$IS_DOSBOX_X" -eq 1 ]; then
+            if should_retry_backend "$DOSBOX_RC" && [ "$IS_DOSBOX_X" -eq 1 ]; then
                 echo "Fallback profile after x11/wayland failures..."
                 run_dosbox_with_env "auto fallback profile" "fallback" \
                     SDL_RENDER_DRIVER=software \
@@ -621,7 +645,7 @@ else
             SDL_RENDER_DRIVER=software \
             LIBGL_ALWAYS_SOFTWARE=1
         DOSBOX_RC=$?
-        if [ "$DOSBOX_RC" -ne 0 ] && [ "$IS_DOSBOX_X" -eq 1 ]; then
+        if should_retry_backend "$DOSBOX_RC" && [ "$IS_DOSBOX_X" -eq 1 ]; then
             echo "X11 primary profile failed; trying DOSBox-X fallback profile..."
             run_dosbox_with_env "x11 (auto fallback profile)" "fallback" \
                 SDL_VIDEODRIVER=x11 \
@@ -629,7 +653,7 @@ else
                 LIBGL_ALWAYS_SOFTWARE=1
             DOSBOX_RC=$?
         fi
-        if [ "$DOSBOX_RC" -ne 0 ] && [ -n "${WAYLAND_DISPLAY:-}" ]; then
+        if should_retry_backend "$DOSBOX_RC" && [ -n "${WAYLAND_DISPLAY:-}" ]; then
             echo "X11 backend failed; trying wayland fallback..."
             run_dosbox_with_env "wayland (fallback)" "primary" \
                 SDL_VIDEODRIVER=wayland \
@@ -638,7 +662,7 @@ else
                 SDL_VIDEO_WAYLAND_PREFER_LIBDECOR=1 \
                 LIBGL_ALWAYS_SOFTWARE=1
             DOSBOX_RC=$?
-            if [ "$DOSBOX_RC" -ne 0 ] && [ "$IS_DOSBOX_X" -eq 1 ]; then
+            if should_retry_backend "$DOSBOX_RC" && [ "$IS_DOSBOX_X" -eq 1 ]; then
                 echo "Wayland primary profile failed; trying DOSBox-X fallback profile..."
                 run_dosbox_with_env "wayland (fallback fallback profile)" "fallback" \
                     SDL_VIDEODRIVER=wayland \
@@ -655,7 +679,7 @@ else
             SDL_RENDER_DRIVER=software \
             LIBGL_ALWAYS_SOFTWARE=1
         DOSBOX_RC=$?
-        if [ "$DOSBOX_RC" -ne 0 ] && [ "$IS_DOSBOX_X" -eq 1 ]; then
+        if should_retry_backend "$DOSBOX_RC" && [ "$IS_DOSBOX_X" -eq 1 ]; then
             echo "Default primary profile failed; trying DOSBox-X fallback profile..."
             run_dosbox_with_env "default (fallback profile)" "fallback" \
                 SDL_RENDER_DRIVER=software \

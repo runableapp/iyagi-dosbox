@@ -49,6 +49,12 @@ if not defined SSH_AUTH_MODE set "SSH_AUTH_MODE=bbs"
 if not defined BRIDGE_BUSY_GAP_MS set "BRIDGE_BUSY_GAP_MS=0"
 if not defined BRIDGE_DTMF_GAP_MS set "BRIDGE_DTMF_GAP_MS=320"
 if not defined BRIDGE_POST_DTMF_DELAY_MS set "BRIDGE_POST_DTMF_DELAY_MS=500"
+if not defined BRIDGE_ANSI_RESET_HACK set "BRIDGE_ANSI_RESET_HACK=0"
+if not defined BRIDGE_ANSI_COLOR_COMPAT_HACK set "BRIDGE_ANSI_COLOR_COMPAT_HACK=1"
+if not defined BRIDGE_ANSI_DEFAULT_FG set "BRIDGE_ANSI_DEFAULT_FG=37"
+if not defined BRIDGE_ANSI_DEFAULT_BG set "BRIDGE_ANSI_DEFAULT_BG=44"
+if not defined BRIDGE_ANSI_DEFAULT_MODE set "BRIDGE_ANSI_DEFAULT_MODE=sgr"
+if not defined BRIDGE_DEBUG_RENDER_SERVER set "BRIDGE_DEBUG_RENDER_SERVER=0"
 if not defined DOSBOX_CPU_CORE set "DOSBOX_CPU_CORE=simple"
 if not defined DOSBOX_CPU_CPUTYPE set "DOSBOX_CPU_CPUTYPE=386"
 if not defined DOSBOX_CPU_CYCLES set "DOSBOX_CPU_CYCLES=2000"
@@ -59,9 +65,16 @@ for /f "usebackq delims=" %%C in (`powershell -NoProfile -Command "$c='%DOSBOX_C
 )
 for /f %%S in ('powershell -NoProfile -Command "$v='%DOSBOX_SCANLINES%'.ToLower(); if($v -in @('1','true','yes','on')){'1'} else {'0'}"') do set "DOSBOX_SCANLINES_ENABLED=%%S"
 if "%DOSBOX_SCANLINES_ENABLED%"=="1" (
-    set "DOSBOX_OUTPUT=opengl"
-    set "DOSBOX_GLSHADER_SET=%DOSBOX_GLSHADER%"
-    set "DOSBOX_INTEGER_SCALING=vertical"
+    if exist "%PKG%glshaders\" (
+        set "DOSBOX_OUTPUT=opengl"
+        set "DOSBOX_GLSHADER_SET=%DOSBOX_GLSHADER%"
+        set "DOSBOX_INTEGER_SCALING=vertical"
+    ) else (
+        echo WARNING: DOSBOX_SCANLINES is enabled but glshaders are missing; falling back to texture output.
+        set "DOSBOX_OUTPUT=texture"
+        set "DOSBOX_GLSHADER_SET=none"
+        set "DOSBOX_INTEGER_SCALING=auto"
+    )
 ) else (
     set "DOSBOX_OUTPUT=texture"
     set "DOSBOX_GLSHADER_SET=none"
@@ -114,6 +127,12 @@ set "BRIDGE_SSH_USER=%IYAGI_USER%"
 set "BRIDGE_BUSY_GAP_MS=%BRIDGE_BUSY_GAP_MS%"
 set "BRIDGE_DTMF_GAP_MS=%BRIDGE_DTMF_GAP_MS%"
 set "BRIDGE_POST_DTMF_DELAY_MS=%BRIDGE_POST_DTMF_DELAY_MS%"
+set "BRIDGE_ANSI_RESET_HACK=%BRIDGE_ANSI_RESET_HACK%"
+set "BRIDGE_ANSI_COLOR_COMPAT_HACK=%BRIDGE_ANSI_COLOR_COMPAT_HACK%"
+set "BRIDGE_ANSI_DEFAULT_FG=%BRIDGE_ANSI_DEFAULT_FG%"
+set "BRIDGE_ANSI_DEFAULT_BG=%BRIDGE_ANSI_DEFAULT_BG%"
+set "BRIDGE_ANSI_DEFAULT_MODE=%BRIDGE_ANSI_DEFAULT_MODE%"
+set "BRIDGE_DEBUG_RENDER_SERVER=%BRIDGE_DEBUG_RENDER_SERVER%"
 start "IYAGI Bridge" /b "%BRIDGE%"
 
 timeout /t 2 >nul

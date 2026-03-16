@@ -41,6 +41,9 @@ var errATHHangup = errors.New("ath hangup requested")
 //                         (client->ssh and ssh->client) (default: off)
 //                         Server-side logs include raw bytes before repair/conversion.
 //                         Logs also include an encoding guess.
+//   BRIDGE_DEBUG_RENDER_SERVER - when enabled, mirror raw ssh->bridge bytes
+//                                directly to stderr so ANSI escapes/newlines
+//                                render in the launcher console. (default: off)
 //   BRIDGE_CLIENT_ENCODING - optional input conversion before SSH:
 //                         off|utf8 (default): no conversion
 //                         euc-kr|cp949|wansung: decode to UTF-8
@@ -49,10 +52,21 @@ var errATHHangup = errors.New("ath hangup requested")
 //                         euc-kr|cp949|wansung: encode UTF-8 to legacy Korean
 //   BRIDGE_SERVER_REPAIR_MOJIBAKE - repair common UTF-8 mojibake in server echo
 //                                   before legacy encoding (default: true)
-//   BRIDGE_ANSI_RESET_HACK - replace ANSI reset sequence ESC[0m with
-//                            ESC[0;1;37;40m on server output stream.
-//                            Useful for old DOS clients that don't handle modern
-//                            reset semantics well. (default: true)
+//   BRIDGE_ANSI_RESET_HACK - rewrite ANSI reset sequence ESC[0m with an
+//                            explicit classic palette sequence:
+//                            ESC[0;1;<default-fg>;<default-bg>m
+//                            Keep off to preserve terminal-native defaults.
+//                            (default: false)
+//   BRIDGE_ANSI_COLOR_COMPAT_HACK - map modern SGR color forms to classic ANSI
+//                                   (default: true)
+//   BRIDGE_ANSI_DEFAULT_FG - default classic ANSI foreground color code (30-37),
+//                            used for SGR 39 and reset rewrite (default: 37)
+//   BRIDGE_ANSI_DEFAULT_BG - default classic ANSI background color code (40-47),
+//                            used for SGR 49 and reset rewrite (default: 44)
+//   BRIDGE_ANSI_DEFAULT_MODE - mapping policy for SGR default color codes:
+//                              "sgr"   -> keep SGR defaults (39/49)
+//                              "reset" -> map 39/49 to SGR 0
+//                              (default: "sgr")
 //   BRIDGE_CONNECT_TIMEOUT_SEC - TCP probe timeout before dialing (default: 5)
 //   BRIDGE_BUSY_REPEAT - busy.wav repeat count on timeout/unreachable (default: 5)
 //   BRIDGE_BUSY_GAP_MS - silent gap between repeated busy tones (default: 0)
@@ -76,10 +90,15 @@ func main() {
 	)
 	sshUser := getenv("BRIDGE_SSH_USER", "bbs")
 	debugEnabled := parseBoolEnv(getenv("BRIDGE_DEBUG", "0"))
+	debugRenderServer := parseBoolEnv(getenv("BRIDGE_DEBUG_RENDER_SERVER", "0"))
 	clientEncoding := strings.ToLower(strings.TrimSpace(getenv("BRIDGE_CLIENT_ENCODING", "off")))
 	serverEncoding := strings.ToLower(strings.TrimSpace(getenv("BRIDGE_SERVER_ENCODING", "off")))
 	serverRepairMojibake := parseBoolEnv(getenv("BRIDGE_SERVER_REPAIR_MOJIBAKE", "1"))
-	ansiResetHack := parseBoolEnv(getenv("BRIDGE_ANSI_RESET_HACK", "1"))
+	ansiResetHack := parseBoolEnv(getenv("BRIDGE_ANSI_RESET_HACK", "0"))
+	ansiColorCompatHack := parseBoolEnv(getenv("BRIDGE_ANSI_COLOR_COMPAT_HACK", "1"))
+	ansiDefaultFG := parseEnvIntInRange("BRIDGE_ANSI_DEFAULT_FG", 37, 30, 37)
+	ansiDefaultBG := parseEnvIntInRange("BRIDGE_ANSI_DEFAULT_BG", 44, 40, 47)
+	ansiDefaultMode := parseANSIDefaultMode(getenv("BRIDGE_ANSI_DEFAULT_MODE", "sgr"))
 	connectTimeoutSec, _ := strconv.Atoi(getenv("BRIDGE_CONNECT_TIMEOUT_SEC", "5"))
 	if connectTimeoutSec <= 0 {
 		connectTimeoutSec = 5
@@ -138,7 +157,15 @@ func main() {
 		log.Printf("bridge: server encoding conversion enabled: utf8 -> %s", serverEncoding)
 	}
 	if ansiResetHack {
-		log.Printf("bridge: ansi reset rewrite enabled (ESC[0m -> ESC[0;1;37;40m)")
+		log.Printf("bridge: ansi reset rewrite enabled (ESC[0m -> ESC[0;1;%d;%dm)", ansiDefaultFG, ansiDefaultBG)
+	}
+	if ansiColorCompatHack {
+		log.Printf(
+			"bridge: ansi color compatibility rewrite enabled (modern SGR -> classic ANSI; default fg=%d bg=%d mode=%s)",
+			ansiDefaultFG,
+			ansiDefaultBG,
+			ansiDefaultMode,
+		)
 	}
 
 	for {
@@ -148,11 +175,11 @@ func main() {
 			continue
 		}
 		log.Printf("bridge: accepted connection from %s", conn.RemoteAddr())
-		go handle(conn, legacyCmd, cmdTemplate, sshUser, debugEnabled, clientEncoding, serverEncoding, serverRepairMojibake, ansiResetHack, connectTimeout, busyRepeat, busyGapMs, ctrlCHangup, dtmfGapMs, postDtmfDelayMs)
+		go handle(conn, legacyCmd, cmdTemplate, sshUser, debugEnabled, debugRenderServer, clientEncoding, serverEncoding, serverRepairMojibake, ansiResetHack, ansiColorCompatHack, ansiDefaultFG, ansiDefaultBG, ansiDefaultMode, connectTimeout, busyRepeat, busyGapMs, ctrlCHangup, dtmfGapMs, postDtmfDelayMs)
 	}
 }
 
-func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled bool, clientEncoding, serverEncoding string, serverRepairMojibake bool, ansiResetHack bool, connectTimeout time.Duration, busyRepeat int, busyGapMs int, ctrlCHangup bool, dtmfGapMs int, postDtmfDelayMs int) {
+func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled bool, debugRenderServer bool, clientEncoding, serverEncoding string, serverRepairMojibake bool, ansiResetHack bool, ansiColorCompatHack bool, ansiDefaultFG int, ansiDefaultBG int, ansiDefaultMode string, connectTimeout time.Duration, busyRepeat int, busyGapMs int, ctrlCHangup bool, dtmfGapMs int, postDtmfDelayMs int) {
 	defer conn.Close()
 	sessionID := conn.RemoteAddr().String()
 	if legacyCmd != "" {
@@ -162,7 +189,7 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 			return
 		}
 		log.Printf("bridge[%s]: legacy connect via %s %s", sessionID, parts[0], strings.Join(parts[1:], " "))
-		if err := runConnectedSession(conn, conn, sessionID, parts[0], parts[1:], false, debugEnabled, clientEncoding, serverEncoding, serverRepairMojibake, ansiResetHack, nil, ctrlCHangup); err != nil {
+		if err := runConnectedSession(conn, conn, sessionID, parts[0], parts[1:], false, debugEnabled, debugRenderServer, clientEncoding, serverEncoding, serverRepairMojibake, ansiResetHack, ansiColorCompatHack, ansiDefaultFG, ansiDefaultBG, ansiDefaultMode, nil, ctrlCHangup); err != nil {
 			log.Printf("bridge[%s]: legacy session failed: %v", sessionID, err)
 		}
 		return
@@ -191,6 +218,9 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 		log.Printf("bridge[%s]: modem cmd: %q", sessionID, cmd)
 
 		switch {
+		case upper == "CLS" || upper == "CLEAR":
+			writeClearLines(conn, 28)
+
 		case upper == "+++":
 			writeModemResponse(conn, "OK")
 
@@ -200,10 +230,19 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 
 		case strings.HasPrefix(upper, "ATDT"), strings.HasPrefix(upper, "ATD"):
 			rawTarget := ""
+			fastDial := false
 			if strings.HasPrefix(upper, "ATDT") {
 				rawTarget = strings.TrimSpace(cmd[4:])
+				if strings.HasPrefix(rawTarget, "-") {
+					fastDial = true
+					rawTarget = strings.TrimSpace(rawTarget[1:])
+				}
 			} else {
 				rawTarget = strings.TrimSpace(cmd[3:])
+				if strings.HasPrefix(rawTarget, "-") {
+					fastDial = true
+					rawTarget = strings.TrimSpace(rawTarget[1:])
+				}
 			}
 
 			// Hayes-like empty dial behavior:
@@ -240,23 +279,27 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 				continue
 			}
 			logOutboundDialDebug(sessionID, sshUser, host, port, execPath, execArgs)
-			log.Printf("bridge[%s]: dialing SSH target %s:%s via %s %s", sessionID, host, port, execPath, strings.Join(execArgs, " "))
+			if fastDial {
+				log.Printf("bridge[%s]: fast-dial SSH target %s:%s via %s %s (skip sounds)", sessionID, host, port, execPath, strings.Join(execArgs, " "))
+			} else {
+				log.Printf("bridge[%s]: dialing SSH target %s:%s via %s %s", sessionID, host, port, execPath, strings.Join(execArgs, " "))
 
-			if err := dialWhileProbing(rawTarget, host, port, connectTimeout, sessionID, dtmfGapMs, postDtmfDelayMs); err != nil {
-				log.Printf("bridge[%s]: outbound probe failed for %s:%s: %v", sessionID, host, port, err)
-				playBusyTones(sessionID, busyRepeat, busyGapMs)
-				writeModemResponse(conn, "NO CARRIER")
-				continue
+				if err := dialWhileProbing(rawTarget, host, port, connectTimeout, sessionID, dtmfGapMs, postDtmfDelayMs); err != nil {
+					log.Printf("bridge[%s]: outbound probe failed for %s:%s: %v", sessionID, host, port, err)
+					playBusyTones(sessionID, busyRepeat, busyGapMs)
+					writeModemResponse(conn, "NO CARRIER")
+					continue
+				}
+
+				// Target is reachable: play ring + modem tones before CONNECT.
+				if err := playRingingAndModem(sessionID); err != nil {
+					log.Printf("bridge[%s]: ringing/modem playback failed: %v", sessionID, err)
+					writeModemResponse(conn, "NO CARRIER")
+					continue
+				}
 			}
 
-			// Target is reachable: play ring + modem tones before CONNECT.
-			if err := playRingingAndModem(sessionID); err != nil {
-				log.Printf("bridge[%s]: ringing/modem playback failed: %v", sessionID, err)
-				writeModemResponse(conn, "NO CARRIER")
-				continue
-			}
-
-			if err := runConnectedSession(conn, reader, sessionID, execPath, execArgs, true, debugEnabled, clientEncoding, serverEncoding, serverRepairMojibake, ansiResetHack, nil, ctrlCHangup); err != nil {
+			if err := runConnectedSession(conn, reader, sessionID, execPath, execArgs, true, debugEnabled, debugRenderServer, clientEncoding, serverEncoding, serverRepairMojibake, ansiResetHack, ansiColorCompatHack, ansiDefaultFG, ansiDefaultBG, ansiDefaultMode, nil, ctrlCHangup); err != nil {
 				if errors.Is(err, errCtrlCHangup) {
 					log.Printf("bridge[%s]: user hangup via Ctrl+C", sessionID)
 					writeModemResponse(conn, "NO CARRIER")
@@ -315,7 +358,7 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 	}
 }
 
-func runConnectedSession(conn net.Conn, input io.Reader, sessionID, execPath string, execArgs []string, sendConnect bool, debugEnabled bool, clientEncoding, serverEncoding string, serverRepairMojibake bool, ansiResetHack bool, preConnect func() error, ctrlCHangup bool) error {
+func runConnectedSession(conn net.Conn, input io.Reader, sessionID, execPath string, execArgs []string, sendConnect bool, debugEnabled bool, debugRenderServer bool, clientEncoding, serverEncoding string, serverRepairMojibake bool, ansiResetHack bool, ansiColorCompatHack bool, ansiDefaultFG int, ansiDefaultBG int, ansiDefaultMode string, preConnect func() error, ctrlCHangup bool) error {
 	// This function may set a read deadline to unblock the client read loop when
 	// the remote session exits. Clear it before returning so command mode can
 	// continue accepting AT commands after NO CARRIER.
@@ -385,12 +428,19 @@ func runConnectedSession(conn net.Conn, input io.Reader, sessionID, execPath str
 	go func() {
 		defer wg.Done()
 		serverSource := io.Reader(stdout)
+		if debugRenderServer {
+			// IMPORTANT: this raw mirror must be the first tap on stdout so what
+			// appears in the launcher console is pre-filter, pre-repair, and
+			// pre-encoding raw server bytes.
+			serverSource = io.TeeReader(serverSource, newDebugRenderTapWriter())
+		}
 		if debugEnabled {
 			// Log server bytes exactly as received from SSH before any repair/conversion.
 			serverSource = io.TeeReader(serverSource, newDebugTapWriter(sessionID, "ssh->bridge(raw-src)"))
 		}
 		serverReader := maybeRepairServerMojibakeReader(serverSource, serverRepairMojibake)
-		serverReader = maybeRewriteANSIResetReader(serverReader, ansiResetHack)
+		serverReader = maybeRewriteANSIColorCompatReader(serverReader, ansiColorCompatHack, ansiDefaultFG, ansiDefaultBG, ansiDefaultMode)
+		serverReader = maybeRewriteANSIResetReader(serverReader, ansiResetHack, ansiDefaultFG, ansiDefaultBG)
 		outputReader := applyServerEncodingReader(serverReader, serverEncoding)
 		if debugEnabled {
 			outputReader = io.TeeReader(outputReader, newDebugTapWriter(sessionID, "bridge->client(conv)"))
@@ -630,6 +680,20 @@ func (w *debugTapWriter) Write(p []byte) (int, error) {
 			detectEncodingSummary(p),
 		)
 	}
+	return len(p), nil
+}
+
+type debugRenderTapWriter struct{}
+
+func newDebugRenderTapWriter() *debugRenderTapWriter {
+	return &debugRenderTapWriter{}
+}
+
+func (w *debugRenderTapWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	_, _ = os.Stderr.Write(p)
 	return len(p), nil
 }
 
@@ -1341,6 +1405,18 @@ func writeModemResponse(conn net.Conn, msg string) {
 	}
 }
 
+func writeClearLines(conn net.Conn, lines int) {
+	if lines <= 0 {
+		return
+	}
+	for i := 0; i < lines; i++ {
+		if _, err := io.WriteString(conn, "\r\n"); err != nil {
+			log.Printf("bridge: write clear line failed at %d/%d: %v", i+1, lines, err)
+			return
+		}
+	}
+}
+
 func getenv(key, defaultVal string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -1354,6 +1430,27 @@ func parseBoolEnv(v string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func parseEnvIntInRange(key string, def, min, max int) int {
+	raw := strings.TrimSpace(getenv(key, strconv.Itoa(def)))
+	v, err := strconv.Atoi(raw)
+	if err != nil {
+		return def
+	}
+	if v < min || v > max {
+		return def
+	}
+	return v
+}
+
+func parseANSIDefaultMode(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "reset":
+		return "reset"
+	default:
+		return "sgr"
 	}
 }
 
@@ -1411,7 +1508,7 @@ func maybeRepairServerMojibakeReader(src io.Reader, enabled bool) io.Reader {
 	return pr
 }
 
-func maybeRewriteANSIResetReader(src io.Reader, enabled bool) io.Reader {
+func maybeRewriteANSIResetReader(src io.Reader, enabled bool, defaultFG int, defaultBG int) io.Reader {
 	if !enabled {
 		return src
 	}
@@ -1419,7 +1516,7 @@ func maybeRewriteANSIResetReader(src io.Reader, enabled bool) io.Reader {
 	go func() {
 		defer pw.Close()
 		pattern := []byte{0x1b, '[', '0', 'm'}
-		replacement := []byte{0x1b, '[', '0', ';', '1', ';', '3', '7', ';', '4', '0', 'm'}
+		replacement := []byte(fmt.Sprintf("\x1b[0;1;%d;%dm", defaultFG, defaultBG))
 
 		buf := make([]byte, 4096)
 		carry := make([]byte, 0, len(pattern)-1)
@@ -1452,6 +1549,299 @@ func maybeRewriteANSIResetReader(src io.Reader, enabled bool) io.Reader {
 		}
 	}()
 	return pr
+}
+
+func maybeRewriteANSIColorCompatReader(src io.Reader, enabled bool, defaultFG int, defaultBG int, defaultMode string) io.Reader {
+	if !enabled {
+		return src
+	}
+	pr, pw := io.Pipe()
+	go func() {
+		defer pw.Close()
+		buf := make([]byte, 4096)
+		carry := make([]byte, 0, 64)
+		for {
+			n, err := src.Read(buf)
+			if n > 0 {
+				joined := append(carry, buf[:n]...)
+				rewritten, keep := rewriteANSIColorCompatChunk(joined, defaultFG, defaultBG, defaultMode)
+				if len(rewritten) > 0 {
+					if _, werr := pw.Write(rewritten); werr != nil {
+						return
+					}
+				}
+				carry = append(carry[:0], keep...)
+			}
+			if err != nil {
+				if len(carry) > 0 {
+					rewritten, _ := rewriteANSIColorCompatChunk(carry, defaultFG, defaultBG, defaultMode)
+					if len(rewritten) > 0 {
+						if _, werr := pw.Write(rewritten); werr != nil {
+							return
+						}
+					}
+				}
+				if err != io.EOF {
+					_ = pw.CloseWithError(err)
+				}
+				return
+			}
+		}
+	}()
+	return pr
+}
+
+func rewriteANSIColorCompatChunk(data []byte, defaultFG int, defaultBG int, defaultMode string) (rewritten []byte, keep []byte) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	out := make([]byte, 0, len(data)+16)
+	i := 0
+	for i < len(data) {
+		if data[i] != 0x1b {
+			out = append(out, data[i])
+			i++
+			continue
+		}
+		// Incomplete ESC sequence at chunk boundary.
+		if i+1 >= len(data) {
+			return out, data[i:]
+		}
+		// Only rewrite CSI SGR sequences.
+		if data[i+1] != '[' {
+			out = append(out, data[i], data[i+1])
+			i += 2
+			continue
+		}
+		j := i + 2
+		for j < len(data) && (data[j] < 0x40 || data[j] > 0x7e) {
+			j++
+		}
+		// Need more bytes to determine full CSI sequence.
+		if j >= len(data) {
+			return out, data[i:]
+		}
+		final := data[j]
+		seq := data[i : j+1]
+		if final != 'm' {
+			out = append(out, seq...)
+			i = j + 1
+			continue
+		}
+
+		paramsRaw := string(data[i+2 : j])
+		params, ok := parseSGRParams(paramsRaw)
+		if !ok {
+			out = append(out, seq...)
+			i = j + 1
+			continue
+		}
+		mapped := mapSGRToClassicANSI(params, defaultFG, defaultBG, defaultMode)
+		out = append(out, 0x1b, '[')
+		for k, v := range mapped {
+			if k > 0 {
+				out = append(out, ';')
+			}
+			out = strconv.AppendInt(out, int64(v), 10)
+		}
+		out = append(out, 'm')
+		i = j + 1
+	}
+	return out, nil
+}
+
+func parseSGRParams(raw string) ([]int, bool) {
+	if raw == "" {
+		return []int{0}, true
+	}
+	tokens := strings.Split(raw, ";")
+	out := make([]int, 0, len(tokens))
+	for _, tok := range tokens {
+		if tok == "" {
+			out = append(out, 0)
+			continue
+		}
+		v, err := strconv.Atoi(tok)
+		if err != nil {
+			return nil, false
+		}
+		out = append(out, v)
+	}
+	return out, true
+}
+
+func mapSGRToClassicANSI(params []int, defaultFG int, defaultBG int, defaultMode string) []int {
+	if len(params) == 0 {
+		return []int{0}
+	}
+	out := make([]int, 0, len(params)+2)
+	for i := 0; i < len(params); i++ {
+		p := params[i]
+		switch {
+		case p == 39:
+			if defaultMode == "reset" {
+				out = append(out, 0)
+			} else {
+				// Preserve SGR default-foreground semantics.
+				out = append(out, 39)
+			}
+		case p == 49:
+			if defaultMode == "reset" {
+				out = append(out, 0)
+			} else {
+				// Preserve SGR default-background semantics.
+				out = append(out, 49)
+			}
+		case p >= 90 && p <= 97:
+			// Bright foreground -> bold + base ANSI color.
+			out = append(out, 1, p-60)
+		case p >= 100 && p <= 107:
+			// Bright background -> nearest classic background.
+			out = append(out, p-60)
+		case p == 38:
+			if i+1 >= len(params) {
+				out = append(out, defaultFG)
+				continue
+			}
+			mode := params[i+1]
+			switch mode {
+			case 5:
+				if i+2 >= len(params) {
+					out = append(out, defaultFG)
+					i++
+					continue
+				}
+				base, bright := mapANSI256ToClassic(params[i+2])
+				if bright {
+					out = append(out, 1)
+				}
+				out = append(out, 30+base)
+				i += 2
+			case 2:
+				if i+4 >= len(params) {
+					out = append(out, defaultFG)
+					i++
+					continue
+				}
+				base, bright := mapRGBToClassic(params[i+2], params[i+3], params[i+4])
+				if bright {
+					out = append(out, 1)
+				}
+				out = append(out, 30+base)
+				i += 4
+			default:
+				out = append(out, defaultFG)
+				i++
+			}
+		case p == 48:
+			if i+1 >= len(params) {
+				out = append(out, defaultBG)
+				continue
+			}
+			mode := params[i+1]
+			switch mode {
+			case 5:
+				if i+2 >= len(params) {
+					out = append(out, defaultBG)
+					i++
+					continue
+				}
+				base, _ := mapANSI256ToClassic(params[i+2])
+				out = append(out, 40+base)
+				i += 2
+			case 2:
+				if i+4 >= len(params) {
+					out = append(out, defaultBG)
+					i++
+					continue
+				}
+				base, _ := mapRGBToClassic(params[i+2], params[i+3], params[i+4])
+				out = append(out, 40+base)
+				i += 4
+			default:
+				out = append(out, defaultBG)
+				i++
+			}
+		default:
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return []int{0}
+	}
+	return out
+}
+
+func mapANSI256ToClassic(n int) (base int, bright bool) {
+	if n < 0 {
+		n = 0
+	}
+	if n > 255 {
+		n = 255
+	}
+	if n < 8 {
+		return n, false
+	}
+	if n < 16 {
+		return n - 8, true
+	}
+	if n >= 232 {
+		v := 8 + 10*(n-232)
+		return mapRGBToClassic(v, v, v)
+	}
+	// 6x6x6 color cube.
+	idx := n - 16
+	r := idx / 36
+	g := (idx / 6) % 6
+	b := idx % 6
+	levels := []int{0, 95, 135, 175, 215, 255}
+	return mapRGBToClassic(levels[r], levels[g], levels[b])
+}
+
+func mapRGBToClassic(r, g, b int) (base int, bright bool) {
+	type ansiRGB struct {
+		r      int
+		g      int
+		b      int
+		base   int
+		bright bool
+	}
+	// 16-color ANSI palette approximation.
+	palette := []ansiRGB{
+		{0, 0, 0, 0, false},
+		{170, 0, 0, 1, false},
+		{0, 170, 0, 2, false},
+		{170, 85, 0, 3, false},
+		{0, 0, 170, 4, false},
+		{170, 0, 170, 5, false},
+		{0, 170, 170, 6, false},
+		{170, 170, 170, 7, false},
+		{85, 85, 85, 0, true},
+		{255, 85, 85, 1, true},
+		{85, 255, 85, 2, true},
+		{255, 255, 85, 3, true},
+		{85, 85, 255, 4, true},
+		{255, 85, 255, 5, true},
+		{85, 255, 255, 6, true},
+		{255, 255, 255, 7, true},
+	}
+	best := palette[0]
+	bestDist := colorDistSq(r, g, b, best.r, best.g, best.b)
+	for _, p := range palette[1:] {
+		d := colorDistSq(r, g, b, p.r, p.g, p.b)
+		if d < bestDist {
+			best = p
+			bestDist = d
+		}
+	}
+	return best.base, best.bright
+}
+
+func colorDistSq(r1, g1, b1, r2, g2, b2 int) int {
+	dr := r1 - r2
+	dg := g1 - g2
+	db := b1 - b2
+	return dr*dr + dg*dg + db*db
 }
 
 func ansiPatternCarry(data, pattern []byte) int {
