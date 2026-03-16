@@ -33,7 +33,7 @@ if not exist "%PKG%.env" (
     copy "%PKG%.env.example" "%PKG%.env" >nul
     echo.
     echo === First run: created config at %PKG%.env
-    echo     Edit it if needed (IYAGI_USER, ports), and re-run.
+    echo     Edit it if needed: IYAGI_USER, ports, and re-run.
     echo.
     notepad "%PKG%.env"
     pause
