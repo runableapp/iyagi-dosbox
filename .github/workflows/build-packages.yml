@@ -12,6 +12,7 @@ permissions:
 
 env:
   DOSBOX_VERSION: "0.82.2"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   build-linux-appimage:
@@ -19,15 +20,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "1.21"
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.x"
 
@@ -38,7 +39,7 @@ jobs:
         run: bash tools/build-linux.sh
 
       - name: Upload Linux artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: linux-package
           path: dist/IYAGI-linux-x86_64.AppImage
@@ -49,15 +50,15 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "1.21"
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.x"
 
@@ -174,7 +175,7 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" ".build/windows/iyagi.iss"
 
       - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: windows-package
           path: dist/win/IYAGI-windows-installer.exe
@@ -185,15 +186,15 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "1.21"
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.x"
 
@@ -311,7 +312,7 @@ jobs:
           hdiutil create -volname "IYAGI Terminal" -srcfolder dist/IYAGI.app -ov -format UDZO dist/IYAGI-macos.dmg
 
       - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: macos-package
           path: dist/IYAGI-macos.dmg
@@ -327,7 +328,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') && !startsWith(github.ref, 'refs/tags/vt')
     steps:
       - name: Download built artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: "*-package"
           merge-multiple: true
