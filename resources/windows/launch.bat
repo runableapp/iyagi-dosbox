@@ -33,7 +33,7 @@ if not exist "%PKG%.env" (
     copy "%PKG%.env.example" "%PKG%.env" >nul
     echo.
     echo === First run: created config at %PKG%.env
-    echo     Edit it if needed (IYAGI_USER, ports), then re-run.
+    echo     Edit it if needed (IYAGI_USER, ports), and re-run.
     echo.
     notepad "%PKG%.env"
     pause
@@ -96,7 +96,7 @@ if not exist "%KEY_FILE%" (
     echo === First run: generating SSH key pair ===
     "%PUTTYGEN%" -t rsa -b 4096 -o "%KEY_FILE%" --comment "iyagi-terminal"
     echo.
-    echo ^>^>^> Add the public key below to your SSH server's ~/.ssh/authorized_keys:
+    echo NOTE: Add the public key below to your SSH server's ~/.ssh/authorized_keys:
     echo.
     "%PUTTYGEN%" -L "%KEY_FILE%"
     echo.
