@@ -73,7 +73,7 @@ DOSBOX_MODEM_LISTENPORT="${DOSBOX_MODEM_LISTENPORT:-auto}"
 DOSBOX_CPU_CORE="${DOSBOX_CPU_CORE:-simple}"
 DOSBOX_CPU_CPUTYPE="${DOSBOX_CPU_CPUTYPE:-386}"
 DOSBOX_CPU_CYCLES="${DOSBOX_CPU_CYCLES:-2000}"
-DOSBOX_SCANLINES="${DOSBOX_SCANLINES:-0}"
+DOSBOX_SCANLINES="${DOSBOX_SCANLINES:-1}"
 DOSBOX_GLSHADER="${DOSBOX_GLSHADER:-crt/vga-1080p-fake-double-scan}"
 if [[ "$DOSBOX_CPU_CYCLES" =~ ^[0-9]+$ ]]; then
     DOSBOX_CPU_CYCLES_SET="$DOSBOX_CPU_CYCLES"
@@ -144,10 +144,11 @@ if [ -n "${IYAGI_USER:-}" ]; then
 else
     SSH_USERHOST="{host}"
 fi
+SSH_ARGS_COMMON="-o BatchMode=no -o PreferredAuthentications=keyboard-interactive,password,publickey -o PubkeyAuthentication=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10"
 if [ -f "$KEY_FILE" ]; then
-    SSH_TEMPLATE="ssh -t -t -o StrictHostKeyChecking=accept-new -i ${KEY_FILE} -p {port} ${SSH_USERHOST}"
+    SSH_TEMPLATE="ssh $SSH_ARGS_COMMON -i ${KEY_FILE} -p {port} ${SSH_USERHOST}"
 else
-    SSH_TEMPLATE="ssh -t -t -o StrictHostKeyChecking=accept-new -p {port} ${SSH_USERHOST}"
+    SSH_TEMPLATE="ssh $SSH_ARGS_COMMON -p {port} ${SSH_USERHOST}"
 fi
 
 BRIDGE_PORT="$BRIDGE_PORT" \

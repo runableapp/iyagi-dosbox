@@ -117,6 +117,30 @@ if find "$SO_DIR" -name "*.so*" -maxdepth 1 | grep -q .; then
     ok "Bundled shared libraries from release"
 fi
 
+# Copy shader resources used by DOSBox-Staging OpenGL scanline mode.
+# Runtime launcher expects ./glshaders relative to staging cwd.
+GLSHADERS_SRC="$(python3 - "$DOSBOX_EXTRACT" <<'PYEOF'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+candidates = []
+for p in root.rglob("glshaders"):
+    if p.is_dir() and (p / "interpolation").exists():
+        candidates.append(p)
+
+if candidates:
+    candidates.sort(key=lambda p: len(str(p)))
+    print(candidates[0])
+PYEOF
+)"
+if [ -n "$GLSHADERS_SRC" ] && [ -d "$GLSHADERS_SRC" ]; then
+    cp -a "$GLSHADERS_SRC" "$APPDIR/glshaders"
+    ok "Bundled glshaders: $GLSHADERS_SRC"
+else
+    echo "  ! WARNING: glshaders directory not found in DOSBox-Staging archive"
+fi
+
 # ─── 5. Assemble AppDir payload ──────────────────────────────────────────────
 
 log "Assembling AppDir payload..."
@@ -152,6 +176,7 @@ Name=IYAGI Terminal
 Comment=Korean DOS BBS terminal (IYAGI 5.3) over SSH
 Exec=AppRun
 Icon=iyagi
+StartupWMClass=app.runable.iyagi-dosbox
 Type=Application
 Categories=Network;TerminalEmulator;
 EOF

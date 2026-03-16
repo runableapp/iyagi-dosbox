@@ -119,8 +119,24 @@ if [ ! -f "$ENV_FILE" ]; then
     "${EDITOR:-nano}" "$ENV_FILE"
 fi
 
+# Preserve explicit process-level overrides so callers can bypass stale .env
+# values (useful for dev helpers like tools/run-appimage.sh).
+OVERRIDE_DOSBOX_SOURCE="${DOSBOX_SOURCE-__UNSET__}"
+OVERRIDE_DOSBOX_SCANLINES="${DOSBOX_SCANLINES-__UNSET__}"
+OVERRIDE_DOSBOX_GLSHADER="${DOSBOX_GLSHADER-__UNSET__}"
+
 # shellcheck source=/dev/null
 source "$ENV_FILE"
+
+if [ "$OVERRIDE_DOSBOX_SOURCE" != "__UNSET__" ]; then
+    DOSBOX_SOURCE="$OVERRIDE_DOSBOX_SOURCE"
+fi
+if [ "$OVERRIDE_DOSBOX_SCANLINES" != "__UNSET__" ]; then
+    DOSBOX_SCANLINES="$OVERRIDE_DOSBOX_SCANLINES"
+fi
+if [ "$OVERRIDE_DOSBOX_GLSHADER" != "__UNSET__" ]; then
+    DOSBOX_GLSHADER="$OVERRIDE_DOSBOX_GLSHADER"
+fi
 
 IYAGI_USER="${IYAGI_USER:-user}"
 IYAGI_SSH_PORT="${IYAGI_SSH_PORT:-22}"
@@ -138,14 +154,19 @@ BRIDGE_DTMF_GAP_MS="${BRIDGE_DTMF_GAP_MS:-320}"
 BRIDGE_POST_DTMF_DELAY_MS="${BRIDGE_POST_DTMF_DELAY_MS:-500}"
 DOSBOX_VIDEO_BACKEND="${DOSBOX_VIDEO_BACKEND:-auto}"
 DOSBOX_WAYLAND_STRICT="${DOSBOX_WAYLAND_STRICT:-0}"
-DOSBOX_SOURCE="${DOSBOX_SOURCE:-auto}"
+# For AppImage builds, prefer the bundled DOSBox for consistent visuals.
+if [ -n "${APPIMAGE:-}" ]; then
+    DOSBOX_SOURCE="${DOSBOX_SOURCE:-bundled}"
+else
+    DOSBOX_SOURCE="${DOSBOX_SOURCE:-auto}"
+fi
 DOSBOX_BIN="${DOSBOX_BIN:-}"
 DOSBOX_X_WINDOWRES="${DOSBOX_X_WINDOWRES:-1024x768}"
 DOSBOX_X_SCALER="${DOSBOX_X_SCALER:-hq2x forced}"
 DOSBOX_X_SCANLINES="${DOSBOX_X_SCANLINES:-0}"
 DOSBOX_X_SCANLINE_SCALER="${DOSBOX_X_SCANLINE_SCALER:-scan2x forced}"
 DOSBOX_X_SCANLINE_OUTPUT="${DOSBOX_X_SCANLINE_OUTPUT:-openglnb}"
-DOSBOX_SCANLINES="${DOSBOX_SCANLINES:-0}"
+DOSBOX_SCANLINES="${DOSBOX_SCANLINES:-1}"
 DOSBOX_GLSHADER="${DOSBOX_GLSHADER:-crt/vga-1080p-fake-double-scan}"
 DOSBOX_CPU_CORE="${DOSBOX_CPU_CORE:-simple}"
 DOSBOX_CPU_CPUTYPE="${DOSBOX_CPU_CPUTYPE:-386}"
@@ -180,9 +201,13 @@ DOSBOX_STAGING_OUTPUT="texture"
 DOSBOX_STAGING_GLSHADER="none"
 DOSBOX_STAGING_INTEGER_SCALING="auto"
 if [[ "${DOSBOX_SCANLINES,,}" =~ ^(1|true|yes|on)$ ]]; then
-    DOSBOX_STAGING_OUTPUT="opengl"
-    DOSBOX_STAGING_GLSHADER="$DOSBOX_GLSHADER"
-    DOSBOX_STAGING_INTEGER_SCALING="vertical"
+    if [ -d "$APPDIR/glshaders" ]; then
+        DOSBOX_STAGING_OUTPUT="opengl"
+        DOSBOX_STAGING_GLSHADER="$DOSBOX_GLSHADER"
+        DOSBOX_STAGING_INTEGER_SCALING="vertical"
+    else
+        echo "WARNING: DOSBOX_SCANLINES is enabled but glshaders are missing; falling back to texture output."
+    fi
 fi
 
 # Prefer system dosbox for better desktop integration (title bar/decorations)
@@ -319,10 +344,11 @@ esac
 
 # ─── Start the bridge ────────────────────────────────────────────────────────
 
+SSH_ARGS_COMMON="-o BatchMode=no -o PreferredAuthentications=keyboard-interactive,password,publickey -o PubkeyAuthentication=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10"
 if [ "$SSH_AUTH_MODE" = "key" ]; then
-    SSH_TEMPLATE="ssh -t -t -o StrictHostKeyChecking=no -i ${KEY_FILE} -p {port} {userhost}"
+    SSH_TEMPLATE="ssh $SSH_ARGS_COMMON -i ${KEY_FILE} -p {port} {userhost}"
 else
-    SSH_TEMPLATE="ssh -t -t -o StrictHostKeyChecking=no -o PubkeyAuthentication=no -o PreferredAuthentications=none,password,keyboard-interactive -p {port} {userhost}"
+    SSH_TEMPLATE="ssh $SSH_ARGS_COMMON -p {port} {userhost}"
 fi
 echo "Bridge listen (IYAGI dial target): 127.0.0.1:${BRIDGE_PORT}"
 echo "Bridge debug logging: ${BRIDGE_DEBUG}"
@@ -370,6 +396,9 @@ ensure_runtime_app_copy
 # Symlink writable app files into the staging area.
 ln -sfn "$RUNTIME_APP_DIR" "$STAGING/app"
 ln -sfn "$DOWNLOADS_DIR" "$STAGING/downloads"
+if [ -d "$APPDIR/glshaders" ]; then
+    ln -sfn "$APPDIR/glshaders" "$STAGING/glshaders"
+fi
 # Always refresh dosbox.conf from the packaged version so updates take effect.
 # (Users should customize via .env, not by editing staging/dosbox.conf.)
 cp "$DOSBOX_CONF" "$STAGING/dosbox.conf"

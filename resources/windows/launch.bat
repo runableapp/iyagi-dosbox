@@ -52,7 +52,7 @@ if not defined BRIDGE_POST_DTMF_DELAY_MS set "BRIDGE_POST_DTMF_DELAY_MS=500"
 if not defined DOSBOX_CPU_CORE set "DOSBOX_CPU_CORE=simple"
 if not defined DOSBOX_CPU_CPUTYPE set "DOSBOX_CPU_CPUTYPE=386"
 if not defined DOSBOX_CPU_CYCLES set "DOSBOX_CPU_CYCLES=2000"
-if not defined DOSBOX_SCANLINES set "DOSBOX_SCANLINES=0"
+if not defined DOSBOX_SCANLINES set "DOSBOX_SCANLINES=1"
 if not defined DOSBOX_GLSHADER set "DOSBOX_GLSHADER=crt/vga-1080p-fake-double-scan"
 for /f "usebackq delims=" %%C in (`powershell -NoProfile -Command "$c='%DOSBOX_CPU_CYCLES%'; if($c -match '^[0-9]+$'){ 'fixed ' + $c } else { $c }"`) do (
     set "DOSBOX_CPU_CYCLES_SET=%%C"
@@ -105,7 +105,7 @@ if /I "%SSH_AUTH_MODE%"=="key" if not exist "%KEY_FILE%" (
 
 :: ─── Start the bridge ───────────────────────────────────────────────────────
 
-set "SSH_TEMPLATE=%PLINK% -P {port} -t -i ""%KEY_FILE%"" {userhost}"
+set "SSH_TEMPLATE=%PLINK% -P {port} -i ""%KEY_FILE%"" {userhost}"
 
 set "BRIDGE_PORT=%BRIDGE_PORT%"
 set "BRIDGE_CMD="

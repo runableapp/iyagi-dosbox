@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -48,6 +49,10 @@ var errATHHangup = errors.New("ath hangup requested")
 //                         euc-kr|cp949|wansung: encode UTF-8 to legacy Korean
 //   BRIDGE_SERVER_REPAIR_MOJIBAKE - repair common UTF-8 mojibake in server echo
 //                                   before legacy encoding (default: true)
+//   BRIDGE_ANSI_RESET_HACK - replace ANSI reset sequence ESC[0m with
+//                            ESC[0;1;37;40m on server output stream.
+//                            Useful for old DOS clients that don't handle modern
+//                            reset semantics well. (default: true)
 //   BRIDGE_CONNECT_TIMEOUT_SEC - TCP probe timeout before dialing (default: 5)
 //   BRIDGE_BUSY_REPEAT - busy.wav repeat count on timeout/unreachable (default: 5)
 //   BRIDGE_BUSY_GAP_MS - silent gap between repeated busy tones (default: 0)
@@ -74,6 +79,7 @@ func main() {
 	clientEncoding := strings.ToLower(strings.TrimSpace(getenv("BRIDGE_CLIENT_ENCODING", "off")))
 	serverEncoding := strings.ToLower(strings.TrimSpace(getenv("BRIDGE_SERVER_ENCODING", "off")))
 	serverRepairMojibake := parseBoolEnv(getenv("BRIDGE_SERVER_REPAIR_MOJIBAKE", "1"))
+	ansiResetHack := parseBoolEnv(getenv("BRIDGE_ANSI_RESET_HACK", "1"))
 	connectTimeoutSec, _ := strconv.Atoi(getenv("BRIDGE_CONNECT_TIMEOUT_SEC", "5"))
 	if connectTimeoutSec <= 0 {
 		connectTimeoutSec = 5
@@ -131,6 +137,9 @@ func main() {
 	if serverEncoding != "" && serverEncoding != "off" && serverEncoding != "utf8" {
 		log.Printf("bridge: server encoding conversion enabled: utf8 -> %s", serverEncoding)
 	}
+	if ansiResetHack {
+		log.Printf("bridge: ansi reset rewrite enabled (ESC[0m -> ESC[0;1;37;40m)")
+	}
 
 	for {
 		conn, err := ln.Accept()
@@ -139,11 +148,11 @@ func main() {
 			continue
 		}
 		log.Printf("bridge: accepted connection from %s", conn.RemoteAddr())
-		go handle(conn, legacyCmd, cmdTemplate, sshUser, debugEnabled, clientEncoding, serverEncoding, serverRepairMojibake, connectTimeout, busyRepeat, busyGapMs, ctrlCHangup, dtmfGapMs, postDtmfDelayMs)
+		go handle(conn, legacyCmd, cmdTemplate, sshUser, debugEnabled, clientEncoding, serverEncoding, serverRepairMojibake, ansiResetHack, connectTimeout, busyRepeat, busyGapMs, ctrlCHangup, dtmfGapMs, postDtmfDelayMs)
 	}
 }
 
-func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled bool, clientEncoding, serverEncoding string, serverRepairMojibake bool, connectTimeout time.Duration, busyRepeat int, busyGapMs int, ctrlCHangup bool, dtmfGapMs int, postDtmfDelayMs int) {
+func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled bool, clientEncoding, serverEncoding string, serverRepairMojibake bool, ansiResetHack bool, connectTimeout time.Duration, busyRepeat int, busyGapMs int, ctrlCHangup bool, dtmfGapMs int, postDtmfDelayMs int) {
 	defer conn.Close()
 	sessionID := conn.RemoteAddr().String()
 	if legacyCmd != "" {
@@ -153,7 +162,7 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 			return
 		}
 		log.Printf("bridge[%s]: legacy connect via %s %s", sessionID, parts[0], strings.Join(parts[1:], " "))
-		if err := runConnectedSession(conn, conn, sessionID, parts[0], parts[1:], false, debugEnabled, clientEncoding, serverEncoding, serverRepairMojibake, nil, ctrlCHangup); err != nil {
+		if err := runConnectedSession(conn, conn, sessionID, parts[0], parts[1:], false, debugEnabled, clientEncoding, serverEncoding, serverRepairMojibake, ansiResetHack, nil, ctrlCHangup); err != nil {
 			log.Printf("bridge[%s]: legacy session failed: %v", sessionID, err)
 		}
 		return
@@ -247,7 +256,7 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 				continue
 			}
 
-			if err := runConnectedSession(conn, reader, sessionID, execPath, execArgs, true, debugEnabled, clientEncoding, serverEncoding, serverRepairMojibake, nil, ctrlCHangup); err != nil {
+			if err := runConnectedSession(conn, reader, sessionID, execPath, execArgs, true, debugEnabled, clientEncoding, serverEncoding, serverRepairMojibake, ansiResetHack, nil, ctrlCHangup); err != nil {
 				if errors.Is(err, errCtrlCHangup) {
 					log.Printf("bridge[%s]: user hangup via Ctrl+C", sessionID)
 					writeModemResponse(conn, "NO CARRIER")
@@ -306,7 +315,7 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 	}
 }
 
-func runConnectedSession(conn net.Conn, input io.Reader, sessionID, execPath string, execArgs []string, sendConnect bool, debugEnabled bool, clientEncoding, serverEncoding string, serverRepairMojibake bool, preConnect func() error, ctrlCHangup bool) error {
+func runConnectedSession(conn net.Conn, input io.Reader, sessionID, execPath string, execArgs []string, sendConnect bool, debugEnabled bool, clientEncoding, serverEncoding string, serverRepairMojibake bool, ansiResetHack bool, preConnect func() error, ctrlCHangup bool) error {
 	// This function may set a read deadline to unblock the client read loop when
 	// the remote session exits. Clear it before returning so command mode can
 	// continue accepting AT commands after NO CARRIER.
@@ -381,6 +390,7 @@ func runConnectedSession(conn net.Conn, input io.Reader, sessionID, execPath str
 			serverSource = io.TeeReader(serverSource, newDebugTapWriter(sessionID, "ssh->bridge(raw-src)"))
 		}
 		serverReader := maybeRepairServerMojibakeReader(serverSource, serverRepairMojibake)
+		serverReader = maybeRewriteANSIResetReader(serverReader, ansiResetHack)
 		outputReader := applyServerEncodingReader(serverReader, serverEncoding)
 		if debugEnabled {
 			outputReader = io.TeeReader(outputReader, newDebugTapWriter(sessionID, "bridge->client(conv)"))
@@ -1399,6 +1409,65 @@ func maybeRepairServerMojibakeReader(src io.Reader, enabled bool) io.Reader {
 		}
 	}()
 	return pr
+}
+
+func maybeRewriteANSIResetReader(src io.Reader, enabled bool) io.Reader {
+	if !enabled {
+		return src
+	}
+	pr, pw := io.Pipe()
+	go func() {
+		defer pw.Close()
+		pattern := []byte{0x1b, '[', '0', 'm'}
+		replacement := []byte{0x1b, '[', '0', ';', '1', ';', '3', '7', ';', '4', '0', 'm'}
+
+		buf := make([]byte, 4096)
+		carry := make([]byte, 0, len(pattern)-1)
+		for {
+			n, err := src.Read(buf)
+			if n > 0 {
+				joined := append(carry, buf[:n]...)
+				keep := ansiPatternCarry(joined, pattern)
+				processEnd := len(joined) - keep
+				if processEnd > 0 {
+					processed := bytes.ReplaceAll(joined[:processEnd], pattern, replacement)
+					if _, werr := pw.Write(processed); werr != nil {
+						return
+					}
+				}
+				carry = append(carry[:0], joined[processEnd:]...)
+			}
+			if err != nil {
+				if len(carry) > 0 {
+					processed := bytes.ReplaceAll(carry, pattern, replacement)
+					if _, werr := pw.Write(processed); werr != nil {
+						return
+					}
+				}
+				if err != io.EOF {
+					_ = pw.CloseWithError(err)
+				}
+				return
+			}
+		}
+	}()
+	return pr
+}
+
+func ansiPatternCarry(data, pattern []byte) int {
+	maxKeep := len(pattern) - 1
+	if maxKeep <= 0 || len(data) == 0 {
+		return 0
+	}
+	if len(data) < maxKeep {
+		maxKeep = len(data)
+	}
+	for k := maxKeep; k > 0; k-- {
+		if bytes.Equal(data[len(data)-k:], pattern[:k]) {
+			return k
+		}
+	}
+	return 0
 }
 
 func repairUTF8MojibakeChunk(p []byte) []byte {
