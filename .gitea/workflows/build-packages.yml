@@ -158,11 +158,11 @@ jobs:
           Source: "..\..\dist\win\IYAGI\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
           [Icons]
-          Name: "{autoprograms}\IYAGI Terminal"; Filename: "{app}\launcher.vbs"; IconFilename: "{app}\iyagi.ico"
-          Name: "{autodesktop}\IYAGI Terminal"; Filename: "{app}\launcher.vbs"; IconFilename: "{app}\iyagi.ico"
+          Name: "{autoprograms}\IYAGI Terminal"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\launcher.vbs"""; IconFilename: "{app}\iyagi.ico"
+          Name: "{autodesktop}\IYAGI Terminal"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\launcher.vbs"""; IconFilename: "{app}\iyagi.ico"
 
           [Run]
-          Filename: "{app}\launcher.vbs"; Description: "Launch IYAGI Terminal"; Flags: nowait postinstall skipifsilent
+          Filename: "{sys}\wscript.exe"; Parameters: """{app}\launcher.vbs"""; Description: "Launch IYAGI Terminal"; Flags: nowait postinstall skipifsilent
 
           [UninstallDelete]
           Type: filesandordirs; Name: "{app}"
