@@ -102,7 +102,8 @@ jobs:
 
           $dosboxExe = Get-ChildItem -Path ".build/windows/dosbox" -Recurse -Filter "dosbox.exe" | Select-Object -First 1
           if (-not $dosboxExe) { throw "dosbox.exe not found in DOSBox-Staging archive" }
-          Copy-Item $dosboxExe.FullName "$pkg/bin/dosbox.exe" -Force
+          $dosboxDir = Split-Path -Parent $dosboxExe.FullName
+          Get-ChildItem -Path $dosboxDir -File | Copy-Item -Destination "$pkg/bin/" -Force
 
           Copy-Item ".build/windows/bridge.exe" "$pkg/bin/bridge.exe" -Force
           Copy-Item ".build/windows/plink.exe" "$pkg/bin/plink.exe" -Force
@@ -112,6 +113,7 @@ jobs:
           Copy-Item "resources/common/dosbox.conf" "$pkg/dosbox.conf" -Force
           Copy-Item "resources/common/.env.example" "$pkg/.env.example" -Force
           Copy-Item "resources/windows/launch.bat" "$pkg/launch.bat" -Force
+          Copy-Item "resources/windows/launcher.vbs" "$pkg/launcher.vbs" -Force
 
       - name: Convert icon (webp to ico)
         shell: pwsh
@@ -155,11 +157,11 @@ jobs:
           Source: "..\..\dist\win\IYAGI\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
           [Icons]
-          Name: "{autoprograms}\IYAGI Terminal"; Filename: "{app}\launch.bat"; IconFilename: "{app}\iyagi.ico"
-          Name: "{autodesktop}\IYAGI Terminal"; Filename: "{app}\launch.bat"; IconFilename: "{app}\iyagi.ico"
+          Name: "{autoprograms}\IYAGI Terminal"; Filename: "{app}\launcher.vbs"; IconFilename: "{app}\iyagi.ico"
+          Name: "{autodesktop}\IYAGI Terminal"; Filename: "{app}\launcher.vbs"; IconFilename: "{app}\iyagi.ico"
 
           [Run]
-          Filename: "{app}\launch.bat"; Description: "Launch IYAGI Terminal"; Flags: nowait postinstall skipifsilent
+          Filename: "{app}\launcher.vbs"; Description: "Launch IYAGI Terminal"; Flags: nowait postinstall skipifsilent
 
           [UninstallDelete]
           Type: filesandordirs; Name: "{app}"

@@ -33,10 +33,9 @@ if not exist "%PKG%.env" (
     copy "%PKG%.env.example" "%PKG%.env" >nul
     echo.
     echo === First run: created config at %PKG%.env
-    echo     Edit it if needed: IYAGI_USER, ports, and re-run.
+    echo     Edit it if needed: IYAGI_USER, ports.
+    echo     Continuing with defaults for now.
     echo.
-    notepad "%PKG%.env"
-    pause
 )
 
 :: Parse KEY=VALUE pairs from .env (skip comment lines starting with #)
@@ -46,6 +45,7 @@ for /f "usebackq eol=# tokens=1,* delims==" %%A in ("%PKG%.env") do (
 
 if not defined IYAGI_USER set "IYAGI_USER=user"
 if not defined IYAGI_SSH_PORT set "IYAGI_SSH_PORT=22"
+if not defined SSH_AUTH_MODE set "SSH_AUTH_MODE=bbs"
 if not defined BRIDGE_BUSY_GAP_MS set "BRIDGE_BUSY_GAP_MS=0"
 if not defined BRIDGE_DTMF_GAP_MS set "BRIDGE_DTMF_GAP_MS=320"
 if not defined BRIDGE_POST_DTMF_DELAY_MS set "BRIDGE_POST_DTMF_DELAY_MS=500"
@@ -91,7 +91,7 @@ powershell -NoProfile -Command "$conf='%PKG%dosbox.conf';$lp='%DOSBOX_MODEM_LIST
 
 :: ─── First-run SSH key setup ────────────────────────────────────────────────
 
-if not exist "%KEY_FILE%" (
+if /I "%SSH_AUTH_MODE%"=="key" if not exist "%KEY_FILE%" (
     echo.
     echo === First run: generating SSH key pair ===
     "%PUTTYGEN%" -t rsa -b 4096 -o "%KEY_FILE%" --comment "iyagi-terminal"
