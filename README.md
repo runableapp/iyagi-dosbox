@@ -63,9 +63,22 @@ First run creates/uses:
 In IYAGI terminal:
 
 - `ATDT<host>:<port>` -> dial exact target
+- `ATDT=<host>:<port>` -> same as above (`=` prefix supported)
 - `ATDT<host>` -> defaults to SSH port 22
+- `ATDT=<user>@<host>:<port>` -> override SSH user from dial string
+  - example: `ATDT=ssh@localhost:40000` -> runs SSH with `{userhost}=ssh@localhost`, `-p 40000`
 - `ATDT` (empty target) -> tone then `NO CARRIER`
 - `ATDT;` -> tone then `OK`
+- `ATDT-<target>` -> fast dial (skip dial/ring sounds)
+
+DTMF playback mapping:
+- Digits `0-9`, `*`, `#` play their own tones
+- Letters in dial target are converted by phone keypad mapping:
+  - `ABC->2`, `DEF->3`, `GHI->4`, `JKL->5`, `MNO->6`, `PQRS->7`, `TUV->8`, `WXYZ->9`
+  - example: `ATDT=bbs.runable.app:40000` plays DTMF using mapped digits for `bbsrunableapp`
+
+Additional modem command:
+- `CLS` / `CLEAR` -> prints 28 blank lines in command mode
 
 The bridge parses ATDT target text directly and attempts outbound SSH accordingly.
 

@@ -265,20 +265,25 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 				continue
 			}
 
-			host, port, parseErr := parseDialTarget(rawTarget)
+			dialUser, host, port, parseErr := parseDialTarget(rawTarget)
 			if parseErr != nil {
 				log.Printf("bridge[%s]: invalid ATDT target %q: %v", sessionID, rawTarget, parseErr)
 				writeModemResponse(conn, "ERROR")
 				continue
 			}
 
-			execPath, execArgs, buildErr := buildOutboundCommand(cmdTemplate, sshUser, host, port)
+			effectiveSSHUser := sshUser
+			if dialUser != "" {
+				effectiveSSHUser = dialUser
+			}
+
+			execPath, execArgs, buildErr := buildOutboundCommand(cmdTemplate, effectiveSSHUser, host, port)
 			if buildErr != nil {
 				log.Printf("bridge[%s]: command template error: %v", sessionID, buildErr)
 				writeModemResponse(conn, "ERROR")
 				continue
 			}
-			logOutboundDialDebug(sessionID, sshUser, host, port, execPath, execArgs)
+			logOutboundDialDebug(sessionID, effectiveSSHUser, host, port, execPath, execArgs)
 			if fastDial {
 				log.Printf("bridge[%s]: fast-dial SSH target %s:%s via %s %s (skip sounds)", sessionID, host, port, execPath, strings.Join(execArgs, " "))
 			} else {
@@ -873,31 +878,67 @@ func isLikelyHayesInitCommand(cmd string) bool {
 	return true
 }
 
-func parseDialTarget(target string) (host, port string, err error) {
+func parseDialTarget(target string) (user, host, port string, err error) {
 	t := strings.TrimSpace(target)
 	if t == "" {
-		return "", "", fmt.Errorf("empty target")
+		return "", "", "", fmt.Errorf("empty target")
+	}
+	if strings.HasPrefix(t, "=") {
+		t = strings.TrimSpace(t[1:])
+	}
+	if t == "" {
+		return "", "", "", fmt.Errorf("empty target")
 	}
 	if strings.Contains(t, "://") {
-		return "", "", fmt.Errorf("unexpected scheme in %q", t)
+		return "", "", "", fmt.Errorf("unexpected scheme in %q", t)
 	}
 	parts := strings.Split(t, ":")
 	if len(parts) == 1 {
-		return parts[0], "22", nil
+		hostPart, userPart, splitErr := splitDialUserHost(parts[0])
+		if splitErr != nil {
+			return "", "", "", splitErr
+		}
+		return userPart, hostPart, "22", nil
 	}
 	if len(parts) != 2 {
-		return "", "", fmt.Errorf("unsupported host:port format %q", t)
+		return "", "", "", fmt.Errorf("unsupported host:port format %q", t)
 	}
-	host = strings.TrimSpace(parts[0])
+	hostPart, userPart, splitErr := splitDialUserHost(parts[0])
+	if splitErr != nil {
+		return "", "", "", splitErr
+	}
+	host = hostPart
+	user = userPart
 	port = strings.TrimSpace(parts[1])
 	if host == "" || port == "" {
-		return "", "", fmt.Errorf("invalid host or port in %q", t)
+		return "", "", "", fmt.Errorf("invalid host or port in %q", t)
 	}
 	pn, convErr := strconv.Atoi(port)
 	if convErr != nil || pn < 1 || pn > 65535 {
-		return "", "", fmt.Errorf("invalid port %q", port)
+		return "", "", "", fmt.Errorf("invalid port %q", port)
 	}
-	return host, port, nil
+	return user, host, port, nil
+}
+
+func splitDialUserHost(raw string) (host string, user string, err error) {
+	part := strings.TrimSpace(raw)
+	if part == "" {
+		return "", "", fmt.Errorf("empty host")
+	}
+	at := strings.Count(part, "@")
+	if at == 0 {
+		return part, "", nil
+	}
+	if at != 1 {
+		return "", "", fmt.Errorf("invalid dial target %q", raw)
+	}
+	pieces := strings.SplitN(part, "@", 2)
+	user = strings.TrimSpace(pieces[0])
+	host = strings.TrimSpace(pieces[1])
+	if user == "" || host == "" {
+		return "", "", fmt.Errorf("invalid dial target %q", raw)
+	}
+	return host, user, nil
 }
 
 func tcpProbe(host, port string, timeout time.Duration) error {
@@ -1027,6 +1068,22 @@ func buildDialToneList(rawTarget string) []string {
 			tones = append(tones, "star.wav")
 		case '#':
 			tones = append(tones, "hash.wav")
+		case 'A', 'a', 'B', 'b', 'C', 'c':
+			tones = append(tones, "2.wav")
+		case 'D', 'd', 'E', 'e', 'F', 'f':
+			tones = append(tones, "3.wav")
+		case 'G', 'g', 'H', 'h', 'I', 'i':
+			tones = append(tones, "4.wav")
+		case 'J', 'j', 'K', 'k', 'L', 'l':
+			tones = append(tones, "5.wav")
+		case 'M', 'm', 'N', 'n', 'O', 'o':
+			tones = append(tones, "6.wav")
+		case 'P', 'p', 'Q', 'q', 'R', 'r', 'S', 's':
+			tones = append(tones, "7.wav")
+		case 'T', 't', 'U', 'u', 'V', 'v':
+			tones = append(tones, "8.wav")
+		case 'W', 'w', 'X', 'x', 'Y', 'y', 'Z', 'z':
+			tones = append(tones, "9.wav")
 		}
 	}
 	return tones

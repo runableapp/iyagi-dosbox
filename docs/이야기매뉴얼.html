@@ -69,8 +69,8 @@ class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="
 <li><code>.env</code></li>
 <li>런처 기본값(<code>${VAR:-default}</code>)</li>
 </ol>
-<p>현재 접속 모델은 <code>ATDT &lt;host&gt;:&lt;port&gt;</code> 직접
-다이얼이므로, 호스트는 항상 다이얼 문자열에서 결정됩니다.</p>
+<p>현재 접속 모델은 <code>ATDT</code> 직접 다이얼 기반이며, 호스트는 다이얼
+문자열에서 결정됩니다.</p>
 <pre class="dotenv"><code>IYAGI_USER=ssh_접속_계정
 BRIDGE_PORT=2323
 SSH_AUTH_MODE=bbs</code></pre>
@@ -97,6 +97,45 @@ SSH_AUTH_MODE=bbs</code></pre>
 <li>브리지(bridge) 프로그램이 <code>ATDT</code>의 호스트/포트를 파싱해
 해당 SSH 대상으로 연결합니다.</li>
 </ol>
+<h3 id="4-1-다이얼-문자열-형식">4-1. 다이얼 문자열 형식</h3>
+<ul>
+<li><code>ATDT호스트:포트</code>
+<ul>
+<li>예: <code>ATDT127.0.0.1:40000</code></li>
+</ul></li>
+<li><code>ATDT=호스트:포트</code>
+<ul>
+<li><code>=</code> 접두어를 허용합니다.</li>
+<li>예: <code>ATDT=bbs.runable.app:40000</code></li>
+</ul></li>
+<li><code>ATDT=사용자@호스트:포트</code>
+<ul>
+<li>다이얼 문자열에서 SSH 사용자를 직접 지정합니다.</li>
+<li>예: <code>ATDT=ssh@localhost:40000</code> -&gt;
+<code>ssh@localhost -p 40000</code> 형태로 연결</li>
+</ul></li>
+<li><code>ATDT-...</code>
+<ul>
+<li>빠른 다이얼 모드(다이얼/링 사운드 생략)로 즉시 연결 시도</li>
+</ul></li>
+</ul>
+<h3 id="4-2-문자-다이얼-dtmf-매핑">4-2. 문자 다이얼 DTMF 매핑</h3>
+<p>숫자 <code>0-9</code>, <code>*</code>, <code>#</code>은 기존처럼 해당
+DTMF 음을 재생합니다.</p>
+<p>문자가 포함된 다이얼 문자열은 전화 키패드 기준으로 숫자 DTMF로 변환해
+재생합니다.</p>
+<ul>
+<li><code>ABC -&gt; 2</code></li>
+<li><code>DEF -&gt; 3</code></li>
+<li><code>GHI -&gt; 4</code></li>
+<li><code>JKL -&gt; 5</code></li>
+<li><code>MNO -&gt; 6</code></li>
+<li><code>PQRS -&gt; 7</code></li>
+<li><code>TUV -&gt; 8</code></li>
+<li><code>WXYZ -&gt; 9</code></li>
+</ul>
+<p>예: <code>ATDT=bbs.runable.app:40000</code> 입력 시
+<code>bbsrunableapp</code> 부분은 위 매핑에 따라 숫자 DTMF가 재생됩니다.</p>
 <h2 id="5-전화번호부통신-설정">5) 전화번호부/통신 설정</h2>
 <p>이 프로젝트는 빌드 시 <code>scripts/configure_iyagi.py</code>로
 이야기 설정 파일을 자동 패치합니다.</p>
@@ -129,6 +168,8 @@ SSH_AUTH_MODE=bbs</code></pre>
 <ul>
 <li><code>F1</code>: 도움말/현재 항목 안내</li>
 <li>통신, 캡처, 전송, 스크립트 등은 이야기 내부 메뉴에서 접근 가능</li>
+<li><code>CLS</code> 또는 <code>CLEAR</code>: 명령 모드에서 빈 줄 28개를 출력해
+화면을 빠르게 정리</li>
 </ul>
 <p>주의: 배포본/키맵 파일(<code>KEY.DEF</code>)에 따라 일부 단축키
 체계가 달라질 수 있으므로, 실제 사용 중에는 <code>F1</code> 도움말을
