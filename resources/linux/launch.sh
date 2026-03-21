@@ -6,10 +6,10 @@
 #   $APPDIR    — absolute path to the squashfs mount (read-only)
 #   $OWD       — original working directory
 #
-# User-writable data defaults to standard XDG user dirs when running as AppImage:
-#   config: ${XDG_CONFIG_HOME:-~/.config}/iyagi-terminal
-#   data:   ${XDG_DATA_HOME:-~/.local/share}/iyagi-terminal
-# You can override both with USER_DATA_ROOT for portable/testing setups.
+# AppImage user-writable layout matches tools/run-dosbox.sh (single tree):
+#   ${XDG_DATA_HOME:-~/.local/share}/iyagi-terminal/
+#     .env, keys/, app/, downloads/, staging/
+# Override with USER_DATA_ROOT for portable/testing (e.g. repo iyagi-data/).
 #
 # Package layout inside the AppImage ($APPDIR):
 #   usr/bin/dosbox   — DOSBox-Staging binary
@@ -72,16 +72,16 @@ DOSBOX_CONF="$APPDIR/dosbox.conf"
 
 # User-writable data location:
 # - If USER_DATA_ROOT is provided, use it directly (portable/testing).
-# - AppImage default: XDG config/data directories.
-# - Dev script fallback: repository-local iyagi-data.
+# - AppImage default: single directory under XDG_DATA_HOME (same layout as iyagi-data/).
+# - Non-AppImage script: repository-local iyagi-data next to this script.
 if [ -n "${USER_DATA_ROOT:-}" ]; then
     USER_DATA_ROOT="$(readlink -f "$USER_DATA_ROOT")"
     CONFIG_ROOT="$USER_DATA_ROOT"
     DATA_ROOT="$USER_DATA_ROOT"
 elif [ -n "${APPIMAGE:-}" ]; then
-    CONFIG_ROOT="${XDG_CONFIG_HOME:-$HOME/.config}/iyagi-terminal"
-    DATA_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/iyagi-terminal"
-    USER_DATA_ROOT="$CONFIG_ROOT"
+    USER_DATA_ROOT="$(readlink -f "${XDG_DATA_HOME:-$HOME/.local/share}/iyagi-terminal")"
+    CONFIG_ROOT="$USER_DATA_ROOT"
+    DATA_ROOT="$USER_DATA_ROOT"
 else
     USER_DATA_ROOT="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/iyagi-data"
     CONFIG_ROOT="$USER_DATA_ROOT"
@@ -94,6 +94,11 @@ RUNTIME_APP_DIR="$DATA_ROOT/app"
 KEY_FILE="$KEYS_DIR/id_rsa"
 
 mkdir -p "$KEYS_DIR" "$DOWNLOADS_DIR"
+
+if [ -n "${APPIMAGE:-}" ]; then
+    echo "IYAGI user data directory: $USER_DATA_ROOT"
+    echo "  (tools/run-appimage.sh points here at <repo>/iyagi-data; direct AppImage launch uses XDG unless you export USER_DATA_ROOT)"
+fi
 
 ensure_runtime_app_copy() {
     if [ -f "$RUNTIME_APP_DIR/I.EXE" ]; then
@@ -110,20 +115,39 @@ ensure_runtime_app_copy() {
 
 ENV_FILE="$USER_DATA_ROOT/.env"
 if [ ! -f "$ENV_FILE" ]; then
+    # First run only: template is $APPDIR/.env.example (from resources/common/.env.example at build time).
+    # Python does not rewrite this file. If .env already exists, update it manually or replace it to pick up a newer bundled template.
     cp "$APPDIR/.env.example" "$ENV_FILE"
-    echo ""
-    echo "=== First run: created config file at $ENV_FILE"
-    echo "    Edit it if needed (IYAGI_USER, ports), then re-run."
-    echo ""
-    read -rp "Press ENTER to open it now (or Ctrl+C to exit and edit manually)..."
-    "${EDITOR:-nano}" "$ENV_FILE"
+    if [ -n "${APPIMAGE:-}" ]; then
+        echo "=== First run: created default config at $ENV_FILE (edit anytime for IYAGI_USER, ports, etc.)"
+    else
+        echo ""
+        echo "=== First run: created config file at $ENV_FILE"
+        echo "    Edit it if needed (IYAGI_USER, ports), then re-run."
+        echo ""
+        read -rp "Press ENTER to open it now (or Ctrl+C to exit and edit manually)..."
+        "${EDITOR:-nano}" "$ENV_FILE"
+    fi
 fi
 
 # Preserve explicit process-level overrides so callers can bypass stale .env
 # values (useful for dev helpers like tools/run-appimage.sh).
 OVERRIDE_DOSBOX_SOURCE="${DOSBOX_SOURCE-__UNSET__}"
+OVERRIDE_DOSBOX_BIN="${DOSBOX_BIN-__UNSET__}"
 OVERRIDE_DOSBOX_SCANLINES="${DOSBOX_SCANLINES-__UNSET__}"
 OVERRIDE_DOSBOX_GLSHADER="${DOSBOX_GLSHADER-__UNSET__}"
+
+# AppImage: drop DOSBOX_BIN inherited from the parent environment (desktop session,
+# dev shells) so resolve_dosbox_bin honors DOSBOX_SOURCE=bundled. A deliberate
+# override is still honored via OVERRIDE_DOSBOX_BIN after sourcing .env.
+if [ -n "${APPIMAGE:-}" ] && [ "$OVERRIDE_DOSBOX_BIN" = "__UNSET__" ]; then
+    unset DOSBOX_BIN
+fi
+
+# Normalize CRLF so values like DOSBOX_CPU_CYCLES=2000\r parse as numeric.
+if [ -f "$ENV_FILE" ] && command -v sed >/dev/null 2>&1 && grep -q $'\r' "$ENV_FILE" 2>/dev/null; then
+    sed -i 's/\r$//' "$ENV_FILE" || true
+fi
 
 # shellcheck source=/dev/null
 source "$ENV_FILE"
@@ -131,11 +155,32 @@ source "$ENV_FILE"
 if [ "$OVERRIDE_DOSBOX_SOURCE" != "__UNSET__" ]; then
     DOSBOX_SOURCE="$OVERRIDE_DOSBOX_SOURCE"
 fi
+if [ "$OVERRIDE_DOSBOX_BIN" != "__UNSET__" ]; then
+    DOSBOX_BIN="$OVERRIDE_DOSBOX_BIN"
+fi
 if [ "$OVERRIDE_DOSBOX_SCANLINES" != "__UNSET__" ]; then
     DOSBOX_SCANLINES="$OVERRIDE_DOSBOX_SCANLINES"
 fi
 if [ "$OVERRIDE_DOSBOX_GLSHADER" != "__UNSET__" ]; then
     DOSBOX_GLSHADER="$OVERRIDE_DOSBOX_GLSHADER"
+fi
+
+# AppImage: a parent environment (desktop, IDE, shell profile) can export
+# DOSBOX_CPU_CYCLES=max / auto etc. If .env does not assign these keys, the bad
+# value would otherwise survive `source` and make the guest (and cursor) run too fast.
+if [ -n "${APPIMAGE:-}" ]; then
+    if [[ ! "${DOSBOX_CPU_CYCLES:-}" =~ ^[0-9]+$ ]]; then
+        if [ -n "${DOSBOX_CPU_CYCLES:-}" ]; then
+            echo "NOTE: Ignoring invalid DOSBOX_CPU_CYCLES='$DOSBOX_CPU_CYCLES' from environment (using .env / default 1000)." >&2
+        fi
+        unset DOSBOX_CPU_CYCLES
+    fi
+    if [[ ! "${DOSBOX_FRAMESKIP:-}" =~ ^[0-9]+$ ]]; then
+        if [ -n "${DOSBOX_FRAMESKIP:-}" ]; then
+            echo "NOTE: Ignoring invalid DOSBOX_FRAMESKIP='$DOSBOX_FRAMESKIP' from environment (using .env / default 1)." >&2
+        fi
+        unset DOSBOX_FRAMESKIP
+    fi
 fi
 
 IYAGI_USER="${IYAGI_USER:-user}"
@@ -160,9 +205,12 @@ BRIDGE_DTMF_GAP_MS="${BRIDGE_DTMF_GAP_MS:-320}"
 BRIDGE_POST_DTMF_DELAY_MS="${BRIDGE_POST_DTMF_DELAY_MS:-500}"
 DOSBOX_VIDEO_BACKEND="${DOSBOX_VIDEO_BACKEND:-auto}"
 DOSBOX_WAYLAND_STRICT="${DOSBOX_WAYLAND_STRICT:-0}"
-# For AppImage builds, prefer the bundled DOSBox for consistent visuals.
+# AppImage: use bundled DOSBox-Staging unless the user exported DOSBOX_SOURCE
+# before launching (.env "auto" would otherwise prefer system dosbox and skew timing).
 if [ -n "${APPIMAGE:-}" ]; then
-    DOSBOX_SOURCE="${DOSBOX_SOURCE:-bundled}"
+    if [ "$OVERRIDE_DOSBOX_SOURCE" = "__UNSET__" ]; then
+        DOSBOX_SOURCE="bundled"
+    fi
 else
     DOSBOX_SOURCE="${DOSBOX_SOURCE:-auto}"
 fi
@@ -176,7 +224,11 @@ DOSBOX_SCANLINES="${DOSBOX_SCANLINES:-1}"
 DOSBOX_GLSHADER="${DOSBOX_GLSHADER:-crt/vga-1080p-fake-double-scan}"
 DOSBOX_CPU_CORE="${DOSBOX_CPU_CORE:-simple}"
 DOSBOX_CPU_CPUTYPE="${DOSBOX_CPU_CPUTYPE:-386}"
-DOSBOX_CPU_CYCLES="${DOSBOX_CPU_CYCLES:-2000}"
+DOSBOX_CPU_CYCLES="${DOSBOX_CPU_CYCLES:-1000}"
+DOSBOX_FRAMESKIP="${DOSBOX_FRAMESKIP:-1}"
+if [[ ! "$DOSBOX_FRAMESKIP" =~ ^[0-9]+$ ]] || [ "$DOSBOX_FRAMESKIP" -lt 0 ] || [ "$DOSBOX_FRAMESKIP" -gt 10 ]; then
+    DOSBOX_FRAMESKIP=1
+fi
 
 if [ "${BRIDGE_PORT:-}" = "auto" ] || [ -z "${BRIDGE_PORT:-}" ]; then
     BRIDGE_PORT="$(pick_unused_tcp_port)"
@@ -187,10 +239,16 @@ elif ! is_port_available "$BRIDGE_PORT"; then
     echo "Configured BRIDGE_PORT=$old_port is in use; switched to free port: $BRIDGE_PORT"
 fi
 
+# DOSBox-Staging expects numeric cpu_cycles (e.g. 1000), not "fixed 1000" on the CLI.
+# DOSBox-X still uses classic cycles= with "fixed N" syntax.
 if [[ "$DOSBOX_CPU_CYCLES" =~ ^[0-9]+$ ]]; then
-    DOSBOX_CPU_CYCLES_SET="fixed ${DOSBOX_CPU_CYCLES}"
+    DOSBOX_CPU_CYCLES_ARG_X="fixed ${DOSBOX_CPU_CYCLES}"
+    DOSBOX_CPU_CYCLES_ARG_STAGING="${DOSBOX_CPU_CYCLES}"
 else
-    DOSBOX_CPU_CYCLES_SET="$DOSBOX_CPU_CYCLES"
+    # Staging needs a numeric cpu_cycles in conf/CLI; junk values (e.g. CRLF) become "max" speed.
+    echo "WARNING: DOSBOX_CPU_CYCLES='$DOSBOX_CPU_CYCLES' is not a plain integer; using 1000 for Staging timing (see dosbox.conf comment)." >&2
+    DOSBOX_CPU_CYCLES_ARG_X="$DOSBOX_CPU_CYCLES"
+    DOSBOX_CPU_CYCLES_ARG_STAGING="1000"
 fi
 
 if [[ "${DOSBOX_X_SCANLINES,,}" =~ ^(1|true|yes|on)$ ]]; then
@@ -206,11 +264,15 @@ fi
 DOSBOX_STAGING_OUTPUT="texture"
 DOSBOX_STAGING_GLSHADER="none"
 DOSBOX_STAGING_INTEGER_SCALING="auto"
+DOSBOX_SCANLINE_WINDOWRES="${DOSBOX_SCANLINE_WINDOWRES:-1280x960}"
+# Match tools/run-dosbox.sh: default 1024x768 unless scanline OpenGL path is active.
+DOSBOX_STAGING_WINDOWRES="1024x768"
 if [[ "${DOSBOX_SCANLINES,,}" =~ ^(1|true|yes|on)$ ]]; then
     if [ -d "$APPDIR/glshaders" ]; then
         DOSBOX_STAGING_OUTPUT="opengl"
         DOSBOX_STAGING_GLSHADER="$DOSBOX_GLSHADER"
         DOSBOX_STAGING_INTEGER_SCALING="vertical"
+        DOSBOX_STAGING_WINDOWRES="$DOSBOX_SCANLINE_WINDOWRES"
     else
         echo "WARNING: DOSBOX_SCANLINES is enabled but glshaders are missing; falling back to texture output."
     fi
@@ -291,6 +353,8 @@ DOSBOX="$(resolve_dosbox_bin)"
 echo "Using DOSBox binary: $DOSBOX"
 echo "Config root: $CONFIG_ROOT"
 echo "Data root: $DATA_ROOT"
+echo "Env file (sourced): $ENV_FILE"
+echo "DOSBox profile: DOSBOX_SOURCE=$DOSBOX_SOURCE cpu_cycles=$DOSBOX_CPU_CYCLES_ARG_STAGING frameskip=$DOSBOX_FRAMESKIP window=${DOSBOX_STAGING_WINDOWRES} output=${DOSBOX_STAGING_OUTPUT} (DOSBOX_SCANLINES=$DOSBOX_SCANLINES)"
 
 # DOSBox-X and DOSBox-Staging don't share identical config options.
 # If DOSBox-X is used, force a 2x scaler at launch so window size
@@ -419,14 +483,33 @@ fi
 cp "$DOSBOX_CONF" "$STAGING/dosbox.conf"
 
 # Route COM4 traffic to the local bridge (AT commands are parsed by bridge).
-python3 - "$STAGING/dosbox.conf" "$BRIDGE_PORT" <<'PYEOF'
+python3 - "$STAGING/dosbox.conf" "$BRIDGE_PORT" "$DOSBOX_CPU_CORE" "$DOSBOX_CPU_CPUTYPE" "$DOSBOX_CPU_CYCLES_ARG_STAGING" "$DOSBOX_FRAMESKIP" <<'PYEOF'
 import pathlib
 import re
 import sys
 
 conf_path = pathlib.Path(sys.argv[1])
-bridge_port = sys.argv[2]
+bridge_port = sys.argv[2].replace("\r", "").strip()
+core = sys.argv[3].replace("\r", "").strip()
+cputype = sys.argv[4].replace("\r", "").strip()
+cycles_staging = sys.argv[5].replace("\r", "").strip()
+frameskip = sys.argv[6].replace("\r", "").strip()
 text = conf_path.read_text(encoding="utf-8", errors="ignore")
+
+# Match tools/run-dosbox.py: force baseline SDL output + MIDI before bridge/CPU tweaks.
+patterns = [
+    (r"(?im)^output\s*=.*$", "output=texture"),
+    (r"(?im)^mididevice\s*=.*$", "mididevice=none"),
+]
+for pat, repl in patterns:
+    if re.search(pat, text):
+        text = re.sub(pat, repl, text)
+    else:
+        text += "\n" + repl + "\n"
+
+# Staging: plain cpu_cycles=2000 can be treated differently than fixed 2000 in some builds.
+cycles_conf = f"fixed {cycles_staging}" if cycles_staging.isdigit() else cycles_staging
+
 serial4_line = f"serial4=nullmodem server:127.0.0.1 port:{bridge_port} transparent:1"
 serial1_line = "serial1=disabled"
 mouse_capture_line = "mouse_capture=nomouse"
@@ -474,6 +557,40 @@ else:
         text += "\n[sdl]\n"
     text += f"{texture_renderer_line}\n"
 
+# Bake CPU + render timing into conf (Staging ignores -set frameskip).
+# IMPORTANT: do not use "append on miss" for cpu_cycles — our template has
+# cycles= but not cpu_cycles=; appending cpu_cycles at EOF first duplicates lines
+# and can confuse Staging (faster/wrong timing).
+if re.search(r"(?im)^\s*core\s*=", text):
+    text = re.sub(r"(?im)^\s*core\s*=.*$", f"core={core}", text)
+else:
+    if "[cpu]" not in text:
+        text += "\n[cpu]\n"
+    text += f"core={core}\n"
+
+if re.search(r"(?im)^\s*cputype\s*=", text):
+    text = re.sub(r"(?im)^\s*cputype\s*=.*$", f"cputype={cputype}", text)
+else:
+    if "[cpu]" not in text:
+        text += "\n[cpu]\n"
+    text += f"cputype={cputype}\n"
+
+if re.search(r"(?im)^\s*cycles\s*=", text):
+    text = re.sub(r"(?im)^\s*cycles\s*=.*$", f"cpu_cycles={cycles_conf}", text)
+elif re.search(r"(?im)^\s*cpu_cycles\s*=", text):
+    text = re.sub(r"(?im)^\s*cpu_cycles\s*=.*$", f"cpu_cycles={cycles_conf}", text)
+else:
+    if "[cpu]" not in text:
+        text += "\n[cpu]\n"
+    text += f"cpu_cycles={cycles_conf}\n"
+
+if re.search(r"(?im)^\s*frameskip\s*=", text):
+    text = re.sub(r"(?im)^\s*frameskip\s*=.*$", f"frameskip={frameskip}", text)
+else:
+    if "[render]" not in text:
+        text += "\n[render]\n"
+    text += f"frameskip={frameskip}\n"
+
 conf_path.write_text(text, encoding="utf-8")
 PYEOF
 
@@ -484,6 +601,7 @@ run_dosbox_with_env() {
     shift 2
     local -a extra_args=()
     local -a forced_env=(
+        "SDL_RENDER_DRIVER=software"
         "SDL_FRAMEBUFFER_ACCELERATION=software"
         "LIBGL_ALWAYS_SOFTWARE=1"
     )
@@ -500,9 +618,19 @@ run_dosbox_with_env() {
     done
     echo "Launching DOSBox backend: $label"
     if [ "$IS_DOSBOX_X" -eq 1 ]; then
-        (cd "$STAGING" && env "${forced_env[@]}" "$@" "$DOSBOX" -conf dosbox.conf -set "core=${DOSBOX_CPU_CORE}" -set "cputype=${DOSBOX_CPU_CPUTYPE}" -set "cycles=${DOSBOX_CPU_CYCLES_SET}" -set "mouse_capture=nomouse" -set "mouse_middle_release=false" -set "dos_mouse_driver=false" "${extra_args[@]}")
+        (cd "$STAGING" && env "${forced_env[@]}" "$@" "$DOSBOX" -conf dosbox.conf -set "core=${DOSBOX_CPU_CORE}" -set "cputype=${DOSBOX_CPU_CPUTYPE}" -set "cycles=${DOSBOX_CPU_CYCLES_ARG_X}" -set "frameskip=${DOSBOX_FRAMESKIP}" -set "mouse_capture=nomouse" -set "mouse_middle_release=false" -set "dos_mouse_driver=false" "${extra_args[@]}")
     else
-        (cd "$STAGING" && env "${forced_env[@]}" "$@" "$DOSBOX" -conf dosbox.conf -set "core=${DOSBOX_CPU_CORE}" -set "cputype=${DOSBOX_CPU_CPUTYPE}" -set "cpu_cycles=${DOSBOX_CPU_CYCLES_SET}" -set "startup_verbosity=quiet" -set "output=${DOSBOX_STAGING_OUTPUT}" -set "glshader=${DOSBOX_STAGING_GLSHADER}" -set "integer_scaling=${DOSBOX_STAGING_INTEGER_SCALING}" -set "ne2000=false" -set "texture_renderer=auto" -set "mouse_capture=nomouse" -set "mouse_middle_release=false" -set "dos_mouse_driver=false" "${extra_args[@]}")
+        # Note: DOSBox-Staging rejects -set frameskip=...; frameskip is applied via patched dosbox.conf.
+        # --noprimaryconf/--nolocalconf match run-dosbox.sh so host ~/.config/dosbox-staging/*.conf cannot override cycles/timing.
+        (cd "$STAGING" && env "${forced_env[@]}" "$@" "$DOSBOX" \
+            --noprimaryconf --nolocalconf \
+            -conf dosbox.conf \
+            -set "core=${DOSBOX_CPU_CORE}" -set "cputype=${DOSBOX_CPU_CPUTYPE}" -set "cpu_cycles=${DOSBOX_CPU_CYCLES_ARG_STAGING}" \
+            -set "startup_verbosity=quiet" \
+            -set "windowresolution=${DOSBOX_STAGING_WINDOWRES}" \
+            -set "output=${DOSBOX_STAGING_OUTPUT}" -set "glshader=${DOSBOX_STAGING_GLSHADER}" -set "integer_scaling=${DOSBOX_STAGING_INTEGER_SCALING}" \
+            -set "ne2000=false" -set "texture_renderer=auto" \
+            -set "mouse_capture=nomouse" -set "mouse_middle_release=false" -set "dos_mouse_driver=false" "${extra_args[@]}")
     fi
 }
 
@@ -517,9 +645,17 @@ run_dosbox_plain() {
     fi
     echo "Launching DOSBox backend: $label"
     if [ "$IS_DOSBOX_X" -eq 1 ]; then
-        (cd "$STAGING" && SDL_FRAMEBUFFER_ACCELERATION=software LIBGL_ALWAYS_SOFTWARE=1 "$DOSBOX" -conf dosbox.conf -set "core=${DOSBOX_CPU_CORE}" -set "cputype=${DOSBOX_CPU_CPUTYPE}" -set "cycles=${DOSBOX_CPU_CYCLES_SET}" -set "mouse_capture=nomouse" -set "mouse_middle_release=false" -set "dos_mouse_driver=false" "${extra_args[@]}")
+        (cd "$STAGING" && SDL_FRAMEBUFFER_ACCELERATION=software LIBGL_ALWAYS_SOFTWARE=1 "$DOSBOX" -conf dosbox.conf -set "core=${DOSBOX_CPU_CORE}" -set "cputype=${DOSBOX_CPU_CPUTYPE}" -set "cycles=${DOSBOX_CPU_CYCLES_ARG_X}" -set "frameskip=${DOSBOX_FRAMESKIP}" -set "mouse_capture=nomouse" -set "mouse_middle_release=false" -set "dos_mouse_driver=false" "${extra_args[@]}")
     else
-        (cd "$STAGING" && SDL_FRAMEBUFFER_ACCELERATION=software LIBGL_ALWAYS_SOFTWARE=1 "$DOSBOX" -conf dosbox.conf -set "core=${DOSBOX_CPU_CORE}" -set "cputype=${DOSBOX_CPU_CPUTYPE}" -set "cpu_cycles=${DOSBOX_CPU_CYCLES_SET}" -set "startup_verbosity=quiet" -set "output=${DOSBOX_STAGING_OUTPUT}" -set "glshader=${DOSBOX_STAGING_GLSHADER}" -set "integer_scaling=${DOSBOX_STAGING_INTEGER_SCALING}" -set "ne2000=false" -set "texture_renderer=auto" -set "mouse_capture=nomouse" -set "mouse_middle_release=false" -set "dos_mouse_driver=false" "${extra_args[@]}")
+        (cd "$STAGING" && SDL_RENDER_DRIVER=software SDL_FRAMEBUFFER_ACCELERATION=software LIBGL_ALWAYS_SOFTWARE=1 "$DOSBOX" \
+            --noprimaryconf --nolocalconf \
+            -conf dosbox.conf \
+            -set "core=${DOSBOX_CPU_CORE}" -set "cputype=${DOSBOX_CPU_CPUTYPE}" -set "cpu_cycles=${DOSBOX_CPU_CYCLES_ARG_STAGING}" \
+            -set "startup_verbosity=quiet" \
+            -set "windowresolution=${DOSBOX_STAGING_WINDOWRES}" \
+            -set "output=${DOSBOX_STAGING_OUTPUT}" -set "glshader=${DOSBOX_STAGING_GLSHADER}" -set "integer_scaling=${DOSBOX_STAGING_INTEGER_SCALING}" \
+            -set "ne2000=false" -set "texture_renderer=auto" \
+            -set "mouse_capture=nomouse" -set "mouse_middle_release=false" -set "dos_mouse_driver=false" "${extra_args[@]}")
     fi
 }
 
@@ -534,8 +670,8 @@ should_retry_backend() {
     [ "$rc" -ne 0 ]
 }
 
-# For DOSBox-X, prefer a plain launch (no forced SDL backend env vars) so
-# behavior matches run-direct.sh and avoids backend-specific window quirks.
+# For DOSBox-X, prefer a plain launch (no forced SDL backend env vars)
+# to avoid backend-specific window quirks.
 if [ "$IS_DOSBOX_X" -eq 1 ]; then
     run_dosbox_plain "dosbox-x direct" "primary"
     DOSBOX_RC=$?

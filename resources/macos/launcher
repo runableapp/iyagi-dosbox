@@ -79,6 +79,10 @@ DOSBOX_MODEM_LISTENPORT="${DOSBOX_MODEM_LISTENPORT:-auto}"
 DOSBOX_CPU_CORE="${DOSBOX_CPU_CORE:-simple}"
 DOSBOX_CPU_CPUTYPE="${DOSBOX_CPU_CPUTYPE:-386}"
 DOSBOX_CPU_CYCLES="${DOSBOX_CPU_CYCLES:-2000}"
+DOSBOX_FRAMESKIP="${DOSBOX_FRAMESKIP:-1}"
+if [[ ! "$DOSBOX_FRAMESKIP" =~ ^[0-9]+$ ]] || [ "$DOSBOX_FRAMESKIP" -lt 0 ] || [ "$DOSBOX_FRAMESKIP" -gt 10 ]; then
+    DOSBOX_FRAMESKIP=1
+fi
 DOSBOX_SCANLINES="${DOSBOX_SCANLINES:-1}"
 DOSBOX_GLSHADER="${DOSBOX_GLSHADER:-crt/vga-1080p-fake-double-scan}"
 if [[ "$DOSBOX_CPU_CYCLES" =~ ^[0-9]+$ ]]; then
@@ -90,11 +94,14 @@ fi
 DOSBOX_STAGING_OUTPUT="texture"
 DOSBOX_STAGING_GLSHADER="none"
 DOSBOX_STAGING_INTEGER_SCALING="auto"
+DOSBOX_SCANLINE_WINDOWRES="${DOSBOX_SCANLINE_WINDOWRES:-1280x960}"
+DOSBOX_STAGING_WINDOWRES="1024x768"
 if [[ "${DOSBOX_SCANLINES,,}" =~ ^(1|true|yes|on)$ ]]; then
     if [ -d "$RESOURCES_DIR/glshaders" ]; then
         DOSBOX_STAGING_OUTPUT="opengl"
         DOSBOX_STAGING_GLSHADER="$DOSBOX_GLSHADER"
         DOSBOX_STAGING_INTEGER_SCALING="vertical"
+        DOSBOX_STAGING_WINDOWRES="$DOSBOX_SCANLINE_WINDOWRES"
     else
         echo "WARNING: DOSBOX_SCANLINES is enabled but glshaders are missing; falling back to texture output."
     fi
@@ -197,13 +204,17 @@ if [ "$DOSBOX_MODEM_LISTENPORT" = "auto" ]; then
 fi
 echo "Using DOSBox modem listenport: $DOSBOX_MODEM_LISTENPORT"
 
-python3 - "$STAGING/dosbox.conf" "$DOSBOX_MODEM_LISTENPORT" <<'PYEOF'
+python3 - "$STAGING/dosbox.conf" "$DOSBOX_MODEM_LISTENPORT" "$DOSBOX_CPU_CORE" "$DOSBOX_CPU_CPUTYPE" "$DOSBOX_CPU_CYCLES_SET" "$DOSBOX_FRAMESKIP" <<'PYEOF'
 import pathlib
 import re
 import sys
 
 conf_path = pathlib.Path(sys.argv[1])
 listenport = sys.argv[2]
+core = sys.argv[3]
+cputype = sys.argv[4]
+cycles_staging = sys.argv[5]
+frameskip = sys.argv[6]
 text = conf_path.read_text(encoding="utf-8", errors="ignore")
 line = f"serial1=modem listenport:{listenport}"
 mouse_capture_line = "mouse_capture=nomouse"
@@ -244,10 +255,50 @@ else:
         text += "\n[sdl]\n"
     text += f"{texture_renderer_line}\n"
 
+# DOSBox-Staging rejects -set frameskip=...; bake CPU + frameskip into conf.
+# Avoid appending cpu_cycles at EOF when only cycles= exists (duplicate / wrong timing).
+if re.search(r"(?im)^\s*core\s*=", text):
+    text = re.sub(r"(?im)^\s*core\s*=.*$", f"core={core}", text)
+else:
+    if "[cpu]" not in text:
+        text += "\n[cpu]\n"
+    text += f"core={core}\n"
+
+if re.search(r"(?im)^\s*cputype\s*=", text):
+    text = re.sub(r"(?im)^\s*cputype\s*=.*$", f"cputype={cputype}", text)
+else:
+    if "[cpu]" not in text:
+        text += "\n[cpu]\n"
+    text += f"cputype={cputype}\n"
+
+if re.search(r"(?im)^\s*cycles\s*=", text):
+    text = re.sub(r"(?im)^\s*cycles\s*=.*$", f"cpu_cycles={cycles_staging}", text)
+elif re.search(r"(?im)^\s*cpu_cycles\s*=", text):
+    text = re.sub(r"(?im)^\s*cpu_cycles\s*=.*$", f"cpu_cycles={cycles_staging}", text)
+else:
+    if "[cpu]" not in text:
+        text += "\n[cpu]\n"
+    text += f"cpu_cycles={cycles_staging}\n"
+
+if re.search(r"(?im)^\s*frameskip\s*=", text):
+    text = re.sub(r"(?im)^\s*frameskip\s*=.*$", f"frameskip={frameskip}", text)
+else:
+    if "[render]" not in text:
+        text += "\n[render]\n"
+    text += f"frameskip={frameskip}\n"
+
 conf_path.write_text(text, encoding="utf-8")
 PYEOF
 
-(cd "$STAGING" && "$DOSBOX" -conf dosbox.conf -set "core=${DOSBOX_CPU_CORE}" -set "cputype=${DOSBOX_CPU_CPUTYPE}" -set "cpu_cycles=${DOSBOX_CPU_CYCLES_SET}" -set "startup_verbosity=quiet" -set "output=${DOSBOX_STAGING_OUTPUT}" -set "glshader=${DOSBOX_STAGING_GLSHADER}" -set "integer_scaling=${DOSBOX_STAGING_INTEGER_SCALING}" -set "ne2000=false" -set "texture_renderer=auto" -set "mouse_capture=nomouse" -set "mouse_middle_release=false" -set "dos_mouse_driver=false")
+(cd "$STAGING" && "$DOSBOX" \
+    --noprimaryconf --nolocalconf \
+    -conf dosbox.conf \
+    -set "core=${DOSBOX_CPU_CORE}" -set "cputype=${DOSBOX_CPU_CPUTYPE}" -set "cpu_cycles=${DOSBOX_CPU_CYCLES_SET}" \
+    -set "startup_verbosity=quiet" \
+    -set "windowresolution=${DOSBOX_STAGING_WINDOWRES}" \
+    -set "output=${DOSBOX_STAGING_OUTPUT}" -set "glshader=${DOSBOX_STAGING_GLSHADER}" -set "integer_scaling=${DOSBOX_STAGING_INTEGER_SCALING}" \
+    -set "ne2000=false" -set "texture_renderer=auto" \
+    -set "mouse_capture=nomouse" -set "mouse_middle_release=false" -set "dos_mouse_driver=false")
 
 # ─── Cleanup ─────────────────────────────────────────────────────────────────
 

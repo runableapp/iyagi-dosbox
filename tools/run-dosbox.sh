@@ -172,6 +172,10 @@ DOSBOX_SCANLINE_WINDOWRES="${DOSBOX_SCANLINE_WINDOWRES:-1280x960}"
 DOSBOX_CPU_CORE="${DOSBOX_CPU_CORE:-simple}"
 DOSBOX_CPU_CPUTYPE="${DOSBOX_CPU_CPUTYPE:-386}"
 DOSBOX_CPU_CYCLES="${DOSBOX_CPU_CYCLES:-2000}"
+DOSBOX_FRAMESKIP="${DOSBOX_FRAMESKIP:-1}"
+if [[ ! "$DOSBOX_FRAMESKIP" =~ ^[0-9]+$ ]] || [ "$DOSBOX_FRAMESKIP" -lt 0 ] || [ "$DOSBOX_FRAMESKIP" -gt 10 ]; then
+    DOSBOX_FRAMESKIP=1
+fi
 if [[ "$DOSBOX_CPU_CYCLES" =~ ^[0-9]+$ ]]; then
     # DOSBox-Staging cpu_cycles expects a raw numeric value (not "fixed N").
     DOSBOX_CPU_CYCLES_SET="$DOSBOX_CPU_CYCLES"
@@ -222,6 +226,7 @@ echo "  DOSBOX_CPU_CORE=$DOSBOX_CPU_CORE"
 echo "  DOSBOX_CPU_CPUTYPE=$DOSBOX_CPU_CPUTYPE"
 echo "  DOSBOX_CPU_CYCLES=$DOSBOX_CPU_CYCLES"
 echo "  DOSBOX_CPU_CYCLES_SET=$DOSBOX_CPU_CYCLES_SET"
+echo "  DOSBOX_FRAMESKIP=$DOSBOX_FRAMESKIP"
 
 if [ ! -d "$IYAGI_DIR" ]; then
     mkdir -p "$IYAGI_DIR"
@@ -250,7 +255,7 @@ cp "$REPO_ROOT/resources/common/dosbox.conf" "$RUNTIME_CONF"
 ln -sfn "$IYAGI_DIR" "$RUN_DIR/app"
 ln -sfn "$DOWNLOADS_DIR" "$RUN_DIR/downloads"
 
-python3 - "$RUNTIME_CONF" "$BRIDGE_PORT" "$DOSBOX_CPU_CORE" "$DOSBOX_CPU_CPUTYPE" "$DOSBOX_CPU_CYCLES_SET" <<'PY'
+python3 - "$RUNTIME_CONF" "$BRIDGE_PORT" "$DOSBOX_CPU_CORE" "$DOSBOX_CPU_CPUTYPE" "$DOSBOX_CPU_CYCLES_SET" "$DOSBOX_FRAMESKIP" <<'PY'
 import re
 import sys
 from pathlib import Path
@@ -260,15 +265,14 @@ bridge_port = sys.argv[2]
 core = sys.argv[3]
 cputype = sys.argv[4]
 cycles_set = sys.argv[5]
+frameskip = sys.argv[6]
 text = cfg.read_text(encoding="utf-8", errors="ignore")
+
+cycles_conf = f"fixed {cycles_set}" if cycles_set.isdigit() else cycles_set
 
 patterns = [
     (r'(?im)^serial4\s*=.*$', f'serial4=nullmodem server:127.0.0.1 port:{bridge_port} transparent:1'),
     (r'(?im)^serial1\s*=.*$', 'serial1=disabled'),
-    (r'(?im)^core\s*=.*$', f'core={core}'),
-    (r'(?im)^cputype\s*=.*$', f'cputype={cputype}'),
-    (r'(?im)^cpu_cycles\s*=.*$', f'cpu_cycles={cycles_set}'),
-    (r'(?im)^cycles\s*=.*$', f'cpu_cycles={cycles_set}'),
     (r'(?im)^output\s*=.*$', 'output=texture'),
     (r'(?im)^texture_renderer\s*=.*$', 'texture_renderer=auto'),
     (r'(?im)^mididevice\s*=.*$', 'mididevice=none'),
@@ -281,6 +285,37 @@ for pat, repl in patterns:
         text = re.sub(pat, repl, text)
     else:
         text += "\n" + repl + "\n"
+
+# cycles= before cpu_cycles= — avoid appending orphan cpu_cycles at EOF then duplicating.
+if re.search(r"(?im)^\s*core\s*=", text):
+    text = re.sub(r"(?im)^\s*core\s*=.*$", f"core={core}", text)
+else:
+    if "[cpu]" not in text:
+        text += "\n[cpu]\n"
+    text += f"core={core}\n"
+
+if re.search(r"(?im)^\s*cputype\s*=", text):
+    text = re.sub(r"(?im)^\s*cputype\s*=.*$", f"cputype={cputype}", text)
+else:
+    if "[cpu]" not in text:
+        text += "\n[cpu]\n"
+    text += f"cputype={cputype}\n"
+
+if re.search(r"(?im)^\s*cycles\s*=", text):
+    text = re.sub(r"(?im)^\s*cycles\s*=.*$", f"cpu_cycles={cycles_conf}", text)
+elif re.search(r"(?im)^\s*cpu_cycles\s*=", text):
+    text = re.sub(r"(?im)^\s*cpu_cycles\s*=.*$", f"cpu_cycles={cycles_conf}", text)
+else:
+    if "[cpu]" not in text:
+        text += "\n[cpu]\n"
+    text += f"cpu_cycles={cycles_conf}\n"
+
+if re.search(r"(?im)^\s*frameskip\s*=", text):
+    text = re.sub(r"(?im)^\s*frameskip\s*=.*$", f"frameskip={frameskip}", text)
+else:
+    if "[render]" not in text:
+        text += "\n[render]\n"
+    text += f"frameskip={frameskip}\n"
 
 cfg.write_text(text, encoding="utf-8")
 PY

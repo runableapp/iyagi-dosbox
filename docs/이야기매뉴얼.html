@@ -31,7 +31,7 @@
 <h2 id="2-실행-방법">2) 실행 방법</h2>
 <h3 id="2-1-직접-실행-개발테스트">2-1. 직접 실행 (개발/테스트)</h3>
 <div class="sourceCode" id="cb1"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">bash</span> tools/run-direct.sh</span></code></pre></div>
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">bash</span> tools/run-dosbox.sh</span></code></pre></div>
 <h3 id="2-2-appimage-실행">2-2. AppImage 실행</h3>
 <p>AppImage 직접 실행:</p>
 <div class="sourceCode" id="cb3"><pre
@@ -39,15 +39,15 @@ class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="
 <h2 id="3-첫-실행-시-설정-파일">3) 첫 실행 시 설정 파일</h2>
 <p>실행 모드에 따라 <code>.env</code> 위치가 다릅니다.</p>
 <ul>
-<li>직접 실행(<code>tools/run-direct.sh</code>) 기본값:
+<li>직접 실행(<code>tools/run-dosbox.sh</code>) 기본값:
 <code>iyagi-data/.env</code> (저장소 루트 기준)</li>
 <li>AppImage 직접 실행 기본값:
-<ul>
-<li>설정:
-<code>${XDG_CONFIG_HOME:-~/.config}/iyagi-terminal/.env</code></li>
-<li>데이터:
-<code>${XDG_DATA_HOME:-~/.local/share}/iyagi-terminal/</code></li>
-</ul></li>
+<strong><code>${XDG_DATA_HOME:-~/.local/share}/iyagi-terminal/</code></strong>
+한 디렉터리에 <code>.env</code>, <code>keys/</code>, <code>app/</code>,
+<code>downloads/</code>, <code>staging/</code> (구조는
+<code>run-dosbox.sh</code>의 <code>iyagi-data/</code>와 동일). 예전에는
+<code>~/.config/iyagi-terminal/.env</code>만 쓰기도 했으며, 최신 런처는
+예전 경로에 <code>.env</code>가 있으면 새 위치로 복사합니다.</li>
 <li>Windows 패키지(<code>launch.bat</code>) 기본값:
 <ul>
 <li>설정: 설치/압축 해제 폴더의 <code>.env</code></li>
@@ -63,6 +63,10 @@ class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="
 <li>공통: <code>USER_DATA_ROOT</code>를 지정하면 해당 경로를 우선
 사용합니다.</li>
 </ul>
+<p><strong><code>.env</code>는 언제 생기나요?</strong> 사용자 데이터 경로에
+<code>.env</code>가 <strong>없을 때</strong> 첫 실행에서 번들된
+<code>.env.example</code>을 복사해 만듭니다. (이미 있으면 덮어쓰지
+않습니다.)</p>
 <p>런처의 값 해석 우선순위:</p>
 <ol type="1">
 <li>셸에서 export한 환경변수</li>
@@ -80,11 +84,8 @@ SSH_AUTH_MODE=bbs</code></pre>
 접속.</li>
 <li><code>SSH_AUTH_MODE=key</code>: 전통 SSH 키 인증 사용(이 경우에만
 <code>iyagi-data/keys</code> 사용).</li>
-<li><code>DOSBOX_X_SCALER</code>: 화면 보간/스케일러
-<ul>
-<li>예: <code>hq2x forced</code> (부드럽게),
-<code>normal2x forced</code> (픽셀 선명)</li>
-</ul></li>
+<li><code>DOSBOX_SCANLINES</code>: 스캔라인 셰이더 on/off</li>
+<li><code>DOSBOX_GLSHADER</code>: 스캔라인 셰이더 프리셋</li>
 </ul>
 <h2 id="4-접속-절차-이-프로젝트-기준">4) 접속 절차 (이 프로젝트
 기준)</h2>
@@ -188,13 +189,13 @@ DTMF 음을 재생합니다.</p>
 <h3 id="9-2-창이-너무-크거나-일부만-채워짐">9-2. 창이 너무 크거나 일부만
 채워짐</h3>
 <ul>
-<li><code>tools/run-direct.sh</code>와
+<li><code>tools/run-dosbox.sh</code>와
 <code>tools/run-appimage.sh</code>를 같은 <code>USER_DATA_ROOT</code>로
 맞춰 실행하세요.</li>
-<li><code>.env</code>에서 스케일러를 조정하세요.
+<li><code>.env</code>에서 CPU/출력 옵션을 조정하세요.
 <ul>
-<li>선명: <code>DOSBOX_X_SCALER="normal2x forced"</code></li>
-<li>부드러움: <code>DOSBOX_X_SCALER="hq2x forced"</code></li>
+<li>커서가 너무 빠르면: <code>DOSBOX_CPU_CYCLES=1000</code> (또는 더 낮게)</li>
+<li>스캔라인 셰이더를 끄려면: <code>DOSBOX_SCANLINES=0</code></li>
 </ul></li>
 </ul>
 <h3 id="9-3-메뉴바상단-dosbox-메뉴-숨기기">9-3. 메뉴바(상단 도스박스

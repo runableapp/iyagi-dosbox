@@ -3,7 +3,7 @@
 Run the legacy DOS terminal program **IYAGI 5.3** over modern **SSH** by wrapping it with DOSBox-Staging and a local Go bridge that emulates modem behavior.
 
 This project targets:
-- Local Linux runs (`tools/run-dosbox.sh`, `tools/run-direct.sh`)
+- Local Linux runs (`tools/run-dosbox.sh`)
 - Linux AppImage packaging
 - Windows portable package/installer flow
 - macOS app bundle/DMG flow
@@ -110,6 +110,7 @@ DOSBox timing/display:
 - `DOSBOX_CPU_CORE` (default `simple`)
 - `DOSBOX_CPU_CPUTYPE` (default `386`)
 - `DOSBOX_CPU_CYCLES` (numeric for Staging path)
+- `DOSBOX_FRAMESKIP` (`0-10`, default `1`)
 - `DOSBOX_VIDEO_BACKEND` (`auto|x11|wayland`)
 - `DOSBOX_WAYLAND_STRICT`
 
@@ -170,13 +171,14 @@ Output:
 ./tools/run-appimage.sh
 ```
 
+By default this helper sets `USER_DATA_ROOT` to `iyagi-data/` (same `.env` as `run-dosbox.sh`). To test the packaged default user directory instead, run `RUN_APPIMAGE_XDG=1 ./tools/run-appimage.sh` (uses `~/.local/share/iyagi-terminal/`, same single-tree layout as `iyagi-data/`).
+
 ---
 
 ## Launcher scripts
 
 Local:
 - `tools/run-dosbox.sh` (portable DOSBox-Staging-focused)
-- `tools/run-direct.sh` (direct runtime script, fallback-capable)
 
 Packaged launchers:
 - Linux AppImage: `resources/linux/launch.sh`
@@ -202,6 +204,14 @@ Cross-platform parity for launch behavior is intentional and maintained.
 
 ## Data directories
 
+### Keeping first-run `.env` in sync with dev
+
+`resources/common/.env.example` is what ships inside packages and becomes a new user’s `.env` on first copy. It is **not** auto-filled from `iyagi-data/.env` at build time (that tree is local and often gitignored).
+
+After you settle on good `DOSBOX_*` / `BRIDGE_*` values in `iyagi-data/.env`, **port those lines into `.env.example`** (e.g. `diff -u resources/common/.env.example iyagi-data/.env`) so AppImage and other installs get the same defaults—without copying secrets or personal `IYAGI_USER` / port choices unless they are meant for everyone.
+
+**Existing installs:** the launcher copies `.env.example` → `.env` **only when `.env` is missing**. Updating the repo or rebuilding the AppImage does **not** overwrite `~/.local/share/iyagi-terminal/.env`. No Python step rewrites it. To refresh defaults, remove or rename that `.env` (or merge changes by hand). Verify what shipped inside the AppImage: `./dist/IYAGI-linux-x86_64.AppImage --appimage-extract` then `head squashfs-root/.env.example` (or inspect `AppDir/.env.example` mid-build before `appimagetool` runs).
+
 ### Local script mode
 - Root: `iyagi-data/`
 - App files: `iyagi-data/app/IYAGI`
@@ -209,8 +219,7 @@ Cross-platform parity for launch behavior is intentional and maintained.
 - Env: `iyagi-data/.env`
 
 ### AppImage mode (default)
-- Config: `${XDG_CONFIG_HOME:-~/.config}/iyagi-terminal`
-- Data: `${XDG_DATA_HOME:-~/.local/share}/iyagi-terminal`
+- User data (`.env`, `keys/`, `app/`, `downloads/`, `staging/`): `${XDG_DATA_HOME:-~/.local/share}/iyagi-terminal/` (same layout as `iyagi-data/` from `run-dosbox.sh`)
 
 Override both with:
 - `USER_DATA_ROOT`
@@ -219,6 +228,12 @@ Override both with:
 
 ## Troubleshooting
 
+- **AppImage still behaves differently from `./tools/run-appimage.sh`**
+  - Rebuild after launcher changes: `bash tools/build-linux.sh` (running `dist/*.AppImage` uses whatever was baked into that file).
+  - `run-appimage.sh` sets `USER_DATA_ROOT` to `iyagi-data/`; double‑clicking the AppImage uses `~/.local/share/iyagi-terminal/` — compare the two `.env` files if timing differs.
+  - A **`DOSBOX_BIN` exported in your desktop session** (e.g. from a dev profile) used to override even `DOSBOX_SOURCE=bundled`; the AppImage launcher now drops inherited `DOSBOX_BIN` unless you set it on the same command line as the AppImage.
+  - On start, the launcher prints `DOSBox profile:` with `cpu_cycles`, `frameskip`, and `output` — confirm they match what you expect.
+  - Run `env | grep -E '^DOSBOX_'` before launching: values like `DOSBOX_CPU_CYCLES=max` are **ignored** by the AppImage launcher unless they are plain integers (otherwise defaults apply).
 - Cursor looks too fast:
   - lower `DOSBOX_CPU_CYCLES` (for example 1200 -> 1000 -> 800)
 - Shader enabled but window looks too small:

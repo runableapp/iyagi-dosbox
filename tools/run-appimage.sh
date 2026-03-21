@@ -12,13 +12,16 @@ if [ ! -x "$APPIMAGE" ]; then
 fi
 
 # Default dev-run behavior:
-# - force bundled DOSBox in AppImage
-# - force scanline shader mode on
-# This bypasses stale ~/.config/iyagi-terminal/.env values when running via
-# this helper script. (The packaged AppImage itself still follows user .env.)
+# - force bundled DOSBox in AppImage for runtime consistency
+# - use the same USER_DATA_ROOT as run-dosbox.sh (iyagi-data/) so .env + tuning
+#   match local dev; AppImage launch.sh otherwise uses XDG dirs and a different .env
 export DOSBOX_SOURCE="${DOSBOX_SOURCE:-bundled}"
-export DOSBOX_SCANLINES="${DOSBOX_SCANLINES:-1}"
-export DOSBOX_GLSHADER="${DOSBOX_GLSHADER:-crt/vga-1080p-fake-double-scan}"
+if [[ "${RUN_APPIMAGE_XDG:-0}" =~ ^(1|true|yes|on)$ ]]; then
+    : # use AppImage default user dir: ~/.local/share/iyagi-terminal/ (same layout as iyagi-data/)
+else
+    export USER_DATA_ROOT="${USER_DATA_ROOT:-$REPO_ROOT/iyagi-data}"
+    echo "run-appimage: USER_DATA_ROOT=$USER_DATA_ROOT (repo iyagi-data; RUN_APPIMAGE_XDG=1 for ~/.local/share/iyagi-terminal)"
+fi
 
 # By default, do NOT force DOSBox-X override.
 #
@@ -37,7 +40,7 @@ if [[ "${RUN_APPIMAGE_FORCE_DOSBOX_X:-0}" =~ ^(1|true|yes|on)$ ]]; then
     export DOSBOX_SOURCE=system
     export DOSBOX_BIN="$DOSBOX_BIN_OVERRIDE"
 fi
-# Leave USER_DATA_ROOT unset by default so AppImage uses XDG config/data dirs.
-# Set USER_DATA_ROOT explicitly if you want portable/repo-local data.
+# NOTE: When you run the AppImage directly (no this script), USER_DATA_ROOT is unset
+# and launch.sh uses ~/.local/share/iyagi-terminal/ — a different .env than iyagi-data/.
 
 exec "$APPIMAGE"

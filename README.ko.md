@@ -3,7 +3,7 @@
 구형 DOS 통신 프로그램 **IYAGI 5.3**를 DOSBox-Staging + 로컬 Go 브리지로 감싸서, 현대 환경에서 **SSH**로 사용할 수 있게 만든 프로젝트입니다.
 
 지원 대상:
-- 로컬 Linux 실행 (`tools/run-dosbox.sh`, `tools/run-direct.sh`)
+- 로컬 Linux 실행 (`tools/run-dosbox.sh`)
 - Linux AppImage 패키징
 - Windows 포터블/인스톨러 흐름
 - macOS 앱 번들/DMG 흐름
@@ -97,6 +97,7 @@ DOSBox 타이밍/화면:
 - `DOSBOX_CPU_CORE` (기본 `simple`)
 - `DOSBOX_CPU_CPUTYPE` (기본 `386`)
 - `DOSBOX_CPU_CYCLES` (Staging 경로에서는 숫자 사용)
+- `DOSBOX_FRAMESKIP` (`0-10`, 기본 `1`)
 - `DOSBOX_VIDEO_BACKEND` (`auto|x11|wayland`)
 - `DOSBOX_WAYLAND_STRICT`
 
@@ -163,7 +164,6 @@ bash tools/build-linux.sh
 
 로컬:
 - `tools/run-dosbox.sh` (portable DOSBox-Staging 중심)
-- `tools/run-direct.sh` (직접 실행 스크립트, fallback 지원)
 
 패키지 런처:
 - Linux AppImage: `resources/linux/launch.sh`
@@ -196,8 +196,7 @@ bash tools/build-linux.sh
 - 환경 파일: `iyagi-data/.env`
 
 ### AppImage 모드 (기본)
-- 설정: `${XDG_CONFIG_HOME:-~/.config}/iyagi-terminal`
-- 데이터: `${XDG_DATA_HOME:-~/.local/share}/iyagi-terminal`
+- 사용자 데이터(`.env`, `keys/`, `app/`, `downloads/`, `staging/`): `${XDG_DATA_HOME:-~/.local/share}/iyagi-terminal/` (`run-dosbox.sh`의 `iyagi-data/`와 동일한 단일 트리)
 
 다음 변수로 둘 다 오버라이드 가능:
 - `USER_DATA_ROOT`

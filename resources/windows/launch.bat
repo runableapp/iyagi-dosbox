@@ -58,17 +58,20 @@ if not defined BRIDGE_DEBUG_RENDER_SERVER set "BRIDGE_DEBUG_RENDER_SERVER=0"
 if not defined DOSBOX_CPU_CORE set "DOSBOX_CPU_CORE=simple"
 if not defined DOSBOX_CPU_CPUTYPE set "DOSBOX_CPU_CPUTYPE=386"
 if not defined DOSBOX_CPU_CYCLES set "DOSBOX_CPU_CYCLES=2000"
+if not defined DOSBOX_FRAMESKIP set "DOSBOX_FRAMESKIP=1"
+for /f %%S in ('powershell -NoProfile -Command "$v='%DOSBOX_FRAMESKIP%'; if(($v -match '^[0-9]+$') -and ([int]$v -ge 0) -and ([int]$v -le 10)){$v}else{'1'}"') do set "DOSBOX_FRAMESKIP=%%S"
 if not defined DOSBOX_SCANLINES set "DOSBOX_SCANLINES=1"
 if not defined DOSBOX_GLSHADER set "DOSBOX_GLSHADER=crt/vga-1080p-fake-double-scan"
-for /f "usebackq delims=" %%C in (`powershell -NoProfile -Command "$c='%DOSBOX_CPU_CYCLES%'; if($c -match '^[0-9]+$'){ 'fixed ' + $c } else { $c }"`) do (
-    set "DOSBOX_CPU_CYCLES_SET=%%C"
-)
+if not defined DOSBOX_SCANLINE_WINDOWRES set "DOSBOX_SCANLINE_WINDOWRES=1280x960"
+set "DOSBOX_WINDOWRES=1024x768"
+rem DOSBox-Staging cpu_cycles expects a plain number (e.g. 1000), not "fixed 1000".
 for /f %%S in ('powershell -NoProfile -Command "$v='%DOSBOX_SCANLINES%'.ToLower(); if($v -in @('1','true','yes','on')){'1'} else {'0'}"') do set "DOSBOX_SCANLINES_ENABLED=%%S"
 if "%DOSBOX_SCANLINES_ENABLED%"=="1" (
     if exist "%PKG%glshaders\" (
         set "DOSBOX_OUTPUT=opengl"
         set "DOSBOX_GLSHADER_SET=%DOSBOX_GLSHADER%"
         set "DOSBOX_INTEGER_SCALING=vertical"
+        set "DOSBOX_WINDOWRES=!DOSBOX_SCANLINE_WINDOWRES!"
     ) else (
         echo WARNING: DOSBOX_SCANLINES is enabled but glshaders are missing; falling back to texture output.
         set "DOSBOX_OUTPUT=texture"
@@ -141,7 +144,7 @@ timeout /t 2 >nul
 :: dosbox.conf uses relative paths (./app, ./downloads) so we run from PKG root.
 
 pushd "%PKG%"
-"%DOSBOX%" -conf dosbox.conf -noconsole -set "core=%DOSBOX_CPU_CORE%" -set "cputype=%DOSBOX_CPU_CPUTYPE%" -set "cpu_cycles=%DOSBOX_CPU_CYCLES_SET%" -set "startup_verbosity=quiet" -set "output=%DOSBOX_OUTPUT%" -set "glshader=%DOSBOX_GLSHADER_SET%" -set "integer_scaling=%DOSBOX_INTEGER_SCALING%" -set "ne2000=false" -set "texture_renderer=auto" -set "mouse_capture=nomouse" -set "mouse_middle_release=false" -set "dos_mouse_driver=false"
+"%DOSBOX%" --noprimaryconf --nolocalconf -conf dosbox.conf -noconsole -set "core=%DOSBOX_CPU_CORE%" -set "cputype=%DOSBOX_CPU_CPUTYPE%" -set "cpu_cycles=%DOSBOX_CPU_CYCLES%" -set "startup_verbosity=quiet" -set "windowresolution=%DOSBOX_WINDOWRES%" -set "output=%DOSBOX_OUTPUT%" -set "glshader=%DOSBOX_GLSHADER_SET%" -set "integer_scaling=%DOSBOX_INTEGER_SCALING%" -set "ne2000=false" -set "texture_renderer=auto" -set "mouse_capture=nomouse" -set "mouse_middle_release=false" -set "dos_mouse_driver=false"
 popd
 
 :: ─── Cleanup ────────────────────────────────────────────────────────────────
