@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -26,6 +27,59 @@ import (
 
 var errCtrlCHangup = errors.New("ctrl-c hangup requested")
 var errATHHangup = errors.New("ath hangup requested")
+
+// atReadResult is one line of Hayes command input (or read error).
+type atReadResult struct {
+	line string
+	err  error
+}
+
+var (
+	soundPlayerMu  sync.Mutex
+	soundPlayerCmd *exec.Cmd
+)
+
+func registerSoundPlayer(cmd *exec.Cmd) {
+	soundPlayerMu.Lock()
+	defer soundPlayerMu.Unlock()
+	soundPlayerCmd = cmd
+}
+
+func unregisterSoundPlayer(cmd *exec.Cmd) {
+	soundPlayerMu.Lock()
+	defer soundPlayerMu.Unlock()
+	if soundPlayerCmd == cmd {
+		soundPlayerCmd = nil
+	}
+}
+
+func killActiveSoundPlayer() {
+	soundPlayerMu.Lock()
+	c := soundPlayerCmd
+	soundPlayerMu.Unlock()
+	if c != nil && c.Process != nil {
+		_ = c.Process.Kill()
+	}
+}
+
+// runPlayOrPreempt runs playFn in the background; if another command line arrives on cmdCh first,
+// playback is cancelled and the subprocess is killed.
+func runPlayOrPreempt(cmdCh <-chan atReadResult, playFn func(context.Context) error) (preempted bool, res atReadResult, playErr error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- playFn(ctx) }()
+	select {
+	case res = <-cmdCh:
+		cancel()
+		killActiveSoundPlayer()
+		<-done
+		return true, res, nil
+	case playErr = <-done:
+		cancel()
+		return false, atReadResult{}, playErr
+	}
+}
 
 // bridge listens on a local TCP port and, for each incoming connection,
 // spawns an SSH command and pipes the TCP stream bidirectionally through it.
@@ -196,33 +250,57 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 	}
 
 	reader := bufio.NewReader(conn)
+	var echoMu sync.Mutex
 	echoEnabled := true
+	echoFn := func() bool {
+		echoMu.Lock()
+		defer echoMu.Unlock()
+		return echoEnabled
+	}
 
+	cmdCh := make(chan atReadResult, 8)
+	go func() {
+		for {
+			line, err := readATCommand(reader, conn, echoFn, sessionID)
+			cmdCh <- atReadResult{line: line, err: err}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+readLoop:
 	for {
-		line, err := readATCommand(reader, conn, echoEnabled, sessionID)
-		if err != nil {
-			if err != io.EOF {
-				log.Printf("bridge[%s]: read command error: %v", sessionID, err)
+		res := <-cmdCh
+		if res.err != nil {
+			if res.err != io.EOF {
+				log.Printf("bridge[%s]: read command error: %v", sessionID, res.err)
 			}
 			log.Printf("bridge[%s]: disconnected before CONNECT", sessionID)
 			return
 		}
+		line := res.line
+	dispatch:
 		cmd := strings.TrimSpace(line)
 		if cmd == "" {
-			continue
+			continue readLoop
 		}
 		upper := normalizeHayesCommand(cmd)
 		if upper == "" {
-			continue
+			continue readLoop
 		}
-		log.Printf("bridge[%s]: modem cmd: %q", sessionID, cmd)
+		// IYAGI and some stacks send escape padding on the same line, e.g. "++++++ATH".
+		// Strip leading '+' so the command is recognized as Hayes AT…
+		upper = strings.TrimLeft(upper, "+")
+		if upper == "" {
+			writeModemResponse(conn, "OK")
+			continue readLoop
+		}
+		log.Printf("bridge[%s]: modem cmd: %q (parsed %q)", sessionID, cmd, upper)
 
 		switch {
 		case upper == "CLS" || upper == "CLEAR":
 			writeClearLines(conn, 28)
-
-		case upper == "+++":
-			writeModemResponse(conn, "OK")
 
 		case !strings.HasPrefix(upper, "AT"):
 			// Hayes-style command mode: input must start with AT.
@@ -232,37 +310,73 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 			rawTarget := ""
 			fastDial := false
 			if strings.HasPrefix(upper, "ATDT") {
-				rawTarget = strings.TrimSpace(cmd[4:])
+				rawTarget = strings.TrimSpace(upper[4:])
 				if strings.HasPrefix(rawTarget, "-") {
 					fastDial = true
 					rawTarget = strings.TrimSpace(rawTarget[1:])
 				}
 			} else {
-				rawTarget = strings.TrimSpace(cmd[3:])
+				rawTarget = strings.TrimSpace(upper[3:])
 				if strings.HasPrefix(rawTarget, "-") {
 					fastDial = true
 					rawTarget = strings.TrimSpace(rawTarget[1:])
 				}
 			}
 
-			// Hayes-like empty dial behavior:
-			// - ATDT / ATD      -> off-hook dial tone wait, then NO CARRIER
-			// - ATDT; / ATD;    -> return to command mode with OK
+			// Hayes-like empty dial (no dial string after ATD / ATDT):
+			// - ATD / ATDT      -> play dial tone (tone.wav), then NO CARRIER
+			// - ATD; / ATDT;    -> play dial tone, then OK (stay in command mode)
 			if rawTarget == ";" {
-				log.Printf("bridge[%s]: empty dial with ';' modifier -> OK", sessionID)
-				if err := playEmbeddedSound("tone.wav"); err != nil {
-					log.Printf("bridge[%s]: tone playback failed for ATD;: %v", sessionID, err)
+				log.Printf("bridge[%s]: empty dial with ';' modifier -> dial tone (Enter cancels)", sessionID)
+				preempted, pre, playErr := runPlayOrPreempt(cmdCh, func(ctx context.Context) error {
+					return playEmbeddedSoundCtx(ctx, "tone.wav")
+				})
+				if preempted {
+					if pre.err != nil {
+						if pre.err != io.EOF {
+							log.Printf("bridge[%s]: read command error: %v", sessionID, pre.err)
+						}
+						return
+					}
+					log.Printf("bridge[%s]: dial tone interrupted (ATD;)", sessionID)
+					writeModemResponse(conn, "OK")
+					if strings.TrimSpace(pre.line) != "" {
+						line = pre.line
+						goto dispatch
+					}
+					continue readLoop
+				}
+				if playErr != nil {
+					log.Printf("bridge[%s]: tone playback failed for ATD;: %v", sessionID, playErr)
 				}
 				writeModemResponse(conn, "OK")
-				continue
+				continue readLoop
 			}
 			if rawTarget == "" {
-				log.Printf("bridge[%s]: empty dial -> tone.wav once then NO CARRIER", sessionID)
-				if err := playEmbeddedSound("tone.wav"); err != nil {
-					log.Printf("bridge[%s]: tone playback failed for empty ATD: %v", sessionID, err)
+				log.Printf("bridge[%s]: empty dial -> dial tone (Enter cancels -> NO CARRIER)", sessionID)
+				preempted, pre, playErr := runPlayOrPreempt(cmdCh, func(ctx context.Context) error {
+					return playEmbeddedSoundCtx(ctx, "tone.wav")
+				})
+				if preempted {
+					if pre.err != nil {
+						if pre.err != io.EOF {
+							log.Printf("bridge[%s]: read command error: %v", sessionID, pre.err)
+						}
+						return
+					}
+					log.Printf("bridge[%s]: dial tone interrupted (empty ATD)", sessionID)
+					writeModemResponse(conn, "NO CARRIER")
+					if strings.TrimSpace(pre.line) != "" {
+						line = pre.line
+						goto dispatch
+					}
+					continue readLoop
+				}
+				if playErr != nil {
+					log.Printf("bridge[%s]: tone playback failed for empty ATD: %v", sessionID, playErr)
 				}
 				writeModemResponse(conn, "NO CARRIER")
-				continue
+				continue readLoop
 			}
 
 			dialUser, host, port, parseErr := parseDialTarget(rawTarget)
@@ -311,9 +425,7 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 					continue
 				}
 				if errors.Is(err, errATHHangup) {
-					// Hayes-style local hangup command acknowledgment.
-					log.Printf("bridge[%s]: user hangup via ATH", sessionID)
-					writeModemResponse(conn, "OK")
+					// Modem lines already sent inside runConnectedSession after SSH teardown.
 					continue
 				}
 				log.Printf("bridge[%s]: connect failed: %v", sessionID, err)
@@ -327,11 +439,15 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 			continue
 
 		case strings.HasPrefix(upper, "ATE0"):
+			echoMu.Lock()
 			echoEnabled = false
+			echoMu.Unlock()
 			writeModemResponse(conn, "OK")
 
 		case strings.HasPrefix(upper, "ATE1"):
+			echoMu.Lock()
 			echoEnabled = true
+			echoMu.Unlock()
 			writeModemResponse(conn, "OK")
 
 		case strings.HasPrefix(upper, "AT"):
@@ -341,6 +457,8 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 			case strings.HasPrefix(upper, "ATH"):
 				// Valid hangup forms are ATH / ATH0 / ATH1.
 				if upper == "ATH" || upper == "ATH0" || upper == "ATH1" {
+					// Carrier drop first, then command ack (matches post-CONNECT ATH path).
+					writeModemResponse(conn, "NO CARRIER")
 					writeModemResponse(conn, "OK")
 				} else {
 					writeModemResponse(conn, "ERROR")
@@ -464,6 +582,18 @@ func runConnectedSession(conn net.Conn, input io.Reader, sessionID, execPath str
 		<-waitResultCh
 		return errCtrlCHangup
 	}
+	if errors.Is(clientCopyErr, errATHHangup) {
+		log.Printf("bridge[%s]: terminating SSH process due to ATH hangup", sessionID)
+		if c.Process != nil {
+			_ = c.Process.Kill()
+		}
+		<-waitResultCh
+		// Send carrier drop + command ack on the TCP stream here (not only from handle())
+		// so it runs immediately after copy goroutines finish, with guaranteed full writes.
+		log.Printf("bridge[%s]: user hangup via ATH", sessionID)
+		announceModemHangupAfterOnlineATH(conn, sessionID)
+		return errATHHangup
+	}
 	if nerr, ok := clientCopyErr.(net.Error); ok && nerr.Timeout() {
 		// Expected when remote side exits and SetReadDeadline is used to unblock input.
 		clientCopyErr = nil
@@ -486,6 +616,7 @@ func copyClientStreamWithDisconnect(dst io.Writer, src io.Reader, modemConn net.
 	pendingPluses := make([]byte, 0, 3)
 	inCommandMode := false
 	cmdBuf := make([]byte, 0, 128)
+	var hangFSM onlineHangupFSM
 
 	flushPendingPluses := func() error {
 		if len(pendingPluses) == 0 {
@@ -576,6 +707,9 @@ func copyClientStreamWithDisconnect(dst io.Writer, src io.Reader, modemConn net.
 				if len(pendingPluses) == 3 && now.Sub(lastByteAt) >= escapeGuard {
 					// Guard-time after "+++" passed: enter online command mode.
 					pendingPluses = pendingPluses[:0]
+					if err := hangFSM.flushToDst(dst); err != nil {
+						return err
+					}
 					inCommandMode = true
 					if cmdErr := processCommandByte(b); cmdErr != nil {
 						return cmdErr
@@ -588,11 +722,17 @@ func copyClientStreamWithDisconnect(dst io.Writer, src io.Reader, modemConn net.
 					if len(pendingPluses) == 0 {
 						// Guard-time before escape sequence.
 						if !lastByteAt.IsZero() && now.Sub(lastByteAt) < escapeGuard {
+							if err := hangFSM.flushToDst(dst); err != nil {
+								return err
+							}
 							if _, werr := dst.Write([]byte{b}); werr != nil {
 								return werr
 							}
 							lastByteAt = now
 							continue
+						}
+						if err := hangFSM.flushToDst(dst); err != nil {
+							return err
 						}
 						pendingPluses = append(pendingPluses, b)
 						lastByteAt = now
@@ -606,21 +746,30 @@ func copyClientStreamWithDisconnect(dst io.Writer, src io.Reader, modemConn net.
 				}
 
 				if len(pendingPluses) > 0 {
+					if err := hangFSM.flushToDst(dst); err != nil {
+						return err
+					}
 					if err := flushPendingPluses(); err != nil {
 						return err
 					}
 				}
 
 				if b == 0x03 && ctrlCHangup {
+					if err := hangFSM.flushToDst(dst); err != nil {
+						return err
+					}
 					return errCtrlCHangup
 				}
-				if _, werr := dst.Write([]byte{b}); werr != nil {
-					return werr
+				if err := hangFSM.feedPassthroughByte(dst, b, sessionID); err != nil {
+					return err
 				}
 				lastByteAt = now
 			}
 		}
 		if err != nil {
+			if ferr := hangFSM.flushToDst(dst); ferr != nil {
+				return ferr
+			}
 			if len(pendingPluses) > 0 {
 				if ferr := flushPendingPluses(); ferr != nil {
 					return ferr
@@ -805,7 +954,9 @@ func countCP949Pairs(p []byte) (pairs int, invalid int) {
 	return pairs, invalid
 }
 
-func readATCommand(r *bufio.Reader, conn net.Conn, echoEnabled bool, sessionID string) (string, error) {
+// readATCommand reads one command line. echoEnabled is queried per byte so ATE0/ATE1 apply immediately.
+// Bare Enter/Return (CR/LF with an empty buffer) returns ("", nil) so callers can interrupt dial-tone playback.
+func readATCommand(r *bufio.Reader, conn net.Conn, echoEnabled func() bool, sessionID string) (string, error) {
 	buf := make([]byte, 0, 128)
 	for {
 		ch, err := r.ReadByte()
@@ -828,7 +979,7 @@ func readATCommand(r *bufio.Reader, conn net.Conn, echoEnabled bool, sessionID s
 		if ch == 0x08 || ch == 0x7f {
 			if len(buf) > 0 {
 				buf = buf[:len(buf)-1]
-				if echoEnabled {
+				if echoEnabled != nil && echoEnabled() {
 					_, _ = io.WriteString(conn, "\b \b")
 				}
 			}
@@ -836,14 +987,17 @@ func readATCommand(r *bufio.Reader, conn net.Conn, echoEnabled bool, sessionID s
 		}
 		if ch == '\r' || ch == '\n' {
 			if len(buf) == 0 {
-				continue
+				if echoEnabled != nil && echoEnabled() {
+					_, _ = io.WriteString(conn, "\r\n")
+				}
+				return "", nil
 			}
-			if echoEnabled {
+			if echoEnabled != nil && echoEnabled() {
 				_, _ = io.WriteString(conn, "\r\n")
 			}
 			return string(buf), nil
 		}
-		if echoEnabled && ch >= 32 && ch <= 126 {
+		if echoEnabled != nil && echoEnabled() && ch >= 32 && ch <= 126 {
 			_, _ = conn.Write([]byte{ch})
 		}
 		buf = append(buf, ch)
@@ -859,6 +1013,166 @@ func normalizeHayesCommand(s string) string {
 		b.WriteRune(r)
 	}
 	return strings.ToUpper(strings.TrimSpace(b.String()))
+}
+
+// isInlineATHHangup is true for Hayes hang-up lines sent in CONNECT/data mode
+// (e.g. IYAGI "hang up modem" without +++ escape).
+func isInlineATHHangup(norm string) bool {
+	switch norm {
+	case "ATH", "ATH0", "ATH1":
+		return true
+	default:
+		return false
+	}
+}
+
+// onlineHangupFSM detects ATH / ATH0 / ATH1 terminated by CR/LF while piping
+// client bytes to SSH, without buffering normal typing (only holds bytes after 'A').
+// plusRun holds a run of '+' (e.g. before "ATH" in "+ + + + + + ATH\r" on one line).
+type onlineHangupFSM struct {
+	acc     []byte
+	plusRun []byte
+}
+
+func (f *onlineHangupFSM) flushToDst(dst io.Writer) error {
+	if f == nil {
+		return nil
+	}
+	if len(f.plusRun) > 0 {
+		_, err := dst.Write(f.plusRun)
+		f.plusRun = nil
+		if err != nil {
+			return err
+		}
+	}
+	if len(f.acc) == 0 {
+		return nil
+	}
+	_, err := dst.Write(f.acc)
+	f.acc = nil
+	return err
+}
+
+const maxInlineATHAccum = 32
+
+// feedPassthroughByte writes b to dst or accumulates a possible inline ATH… command.
+func (f *onlineHangupFSM) feedPassthroughByte(dst io.Writer, b byte, sessionID string) error {
+	const maxPlusRun = 24
+	if f.acc == nil {
+		// CONNECT stream: "+…+ATH" without a prior +++ escape (IYAGI-style).
+		if len(f.plusRun) > 0 || b == '+' {
+			if b == '+' {
+				if len(f.plusRun) < maxPlusRun {
+					f.plusRun = append(f.plusRun, b)
+					return nil
+				}
+				if _, err := dst.Write(f.plusRun); err != nil {
+					return err
+				}
+				f.plusRun = nil
+				return f.feedPassthroughByte(dst, b, sessionID)
+			}
+			if len(f.plusRun) > 0 {
+				if b == 'A' || b == 'a' {
+					f.plusRun = nil
+					f.acc = []byte{b}
+					return nil
+				}
+				if _, err := dst.Write(f.plusRun); err != nil {
+					return err
+				}
+				f.plusRun = nil
+				return f.feedPassthroughByte(dst, b, sessionID)
+			}
+		}
+		if b == 'A' || b == 'a' {
+			f.acc = []byte{b}
+			return nil
+		}
+		_, err := dst.Write([]byte{b})
+		return err
+	}
+	if len(f.acc) >= maxInlineATHAccum {
+		if err := f.flushToDst(dst); err != nil {
+			return err
+		}
+		return f.feedPassthroughByte(dst, b, sessionID)
+	}
+
+	switch len(f.acc) {
+	case 1:
+		if b == '\r' || b == '\n' {
+			if err := f.flushToDst(dst); err != nil {
+				return err
+			}
+			_, err := dst.Write([]byte{b})
+			return err
+		}
+		if b == 'T' || b == 't' {
+			f.acc = append(f.acc, b)
+			return nil
+		}
+		if err := f.flushToDst(dst); err != nil {
+			return err
+		}
+		return f.feedPassthroughByte(dst, b, sessionID)
+	case 2:
+		if b == '\r' || b == '\n' {
+			if err := f.flushToDst(dst); err != nil {
+				return err
+			}
+			_, err := dst.Write([]byte{b})
+			return err
+		}
+		if b == 'H' || b == 'h' {
+			f.acc = append(f.acc, b)
+			return nil
+		}
+		if err := f.flushToDst(dst); err != nil {
+			return err
+		}
+		return f.feedPassthroughByte(dst, b, sessionID)
+	case 3:
+		if b == '\r' || b == '\n' {
+			norm := normalizeHayesCommand(string(f.acc))
+			if isInlineATHHangup(norm) {
+				log.Printf("bridge[%s]: online hangup via inline %q (norm %q)", sessionID, string(f.acc), norm)
+				f.acc = nil
+				return errATHHangup
+			}
+			if err := f.flushToDst(dst); err != nil {
+				return err
+			}
+			_, err := dst.Write([]byte{b})
+			return err
+		}
+		if b == '0' || b == '1' {
+			f.acc = append(f.acc, b)
+			return nil
+		}
+		if err := f.flushToDst(dst); err != nil {
+			return err
+		}
+		return f.feedPassthroughByte(dst, b, sessionID)
+	default:
+		if b == '\r' || b == '\n' {
+			norm := normalizeHayesCommand(string(f.acc))
+			if isInlineATHHangup(norm) {
+				log.Printf("bridge[%s]: online hangup via inline %q (norm %q)", sessionID, string(f.acc), norm)
+				f.acc = nil
+				return errATHHangup
+			}
+			if err := f.flushToDst(dst); err != nil {
+				return err
+			}
+			_, err := dst.Write([]byte{b})
+			return err
+		}
+		if err := f.flushToDst(dst); err != nil {
+			return err
+		}
+		return f.feedPassthroughByte(dst, b, sessionID)
+	}
 }
 
 func isLikelyHayesInitCommand(cmd string) bool {
@@ -1090,11 +1404,18 @@ func buildDialToneList(rawTarget string) []string {
 }
 
 func playEmbeddedSound(name string) error {
+	return playEmbeddedSoundCtx(context.Background(), name)
+}
+
+func playEmbeddedSoundCtx(ctx context.Context, name string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	data, ok := embeddedSounds[name]
 	if !ok {
 		return fmt.Errorf("embedded sound %q not found", name)
 	}
-	return playWavBytes(data, name)
+	return playWavBytesCtx(ctx, data, name)
 }
 
 func playRepeatedEmbeddedSound(name string, repeat int) error {
@@ -1110,6 +1431,13 @@ func playRepeatedEmbeddedSound(name string, repeat int) error {
 }
 
 func playWavBytes(data []byte, label string) error {
+	return playWavBytesCtx(context.Background(), data, label)
+}
+
+func playWavBytesCtx(ctx context.Context, data []byte, label string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	tmp, err := os.CreateTemp("", "iyagi-sound-*.wav")
 	if err != nil {
 		return fmt.Errorf("create temp wav: %w", err)
@@ -1126,7 +1454,7 @@ func playWavBytes(data []byte, label string) error {
 	}
 	defer os.Remove(tmpPath)
 
-	if err := playSoundFile(tmpPath); err != nil {
+	if err := playSoundFileCtx(ctx, tmpPath); err != nil {
 		return fmt.Errorf("play %q: %w", label, err)
 	}
 	return nil
@@ -1333,9 +1661,13 @@ func buildWavFromFmtAndData(fmtChunk, dataChunk []byte) []byte {
 }
 
 func playSoundFile(path string) error {
+	return playSoundFileCtx(context.Background(), path)
+}
+
+func playSoundFileCtx(ctx context.Context, path string) error {
 	switch runtime.GOOS {
 	case "windows":
-		return runFirstAvailablePlayer([][]string{
+		return runFirstAvailablePlayerCtx(ctx, [][]string{
 			{
 				"powershell",
 				"-NoProfile",
@@ -1345,11 +1677,11 @@ func playSoundFile(path string) error {
 			},
 		})
 	case "darwin":
-		return runFirstAvailablePlayer([][]string{
+		return runFirstAvailablePlayerCtx(ctx, [][]string{
 			{"afplay", path},
 		})
 	default:
-		return runFirstAvailablePlayer([][]string{
+		return runFirstAvailablePlayerCtx(ctx, [][]string{
 			{"aplay", "-q", path},
 			{"paplay", path},
 			{"ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", path},
@@ -1359,6 +1691,13 @@ func playSoundFile(path string) error {
 }
 
 func runFirstAvailablePlayer(candidates [][]string) error {
+	return runFirstAvailablePlayerCtx(context.Background(), candidates)
+}
+
+func runFirstAvailablePlayerCtx(ctx context.Context, candidates [][]string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	var checked []string
 	for _, args := range candidates {
 		if len(args) == 0 {
@@ -1372,10 +1711,25 @@ func runFirstAvailablePlayer(candidates [][]string) error {
 		cmd := exec.Command(bin, args[1:]...)
 		cmd.Stdout = io.Discard
 		cmd.Stderr = io.Discard
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("%s failed: %w", strings.Join(args, " "), err)
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("%s start failed: %w", strings.Join(args, " "), err)
 		}
-		return nil
+		registerSoundPlayer(cmd)
+		waitDone := make(chan error, 1)
+		go func() { waitDone <- cmd.Wait() }()
+		select {
+		case <-ctx.Done():
+			_ = cmd.Process.Kill()
+			<-waitDone
+			unregisterSoundPlayer(cmd)
+			return ctx.Err()
+		case err := <-waitDone:
+			unregisterSoundPlayer(cmd)
+			if err != nil {
+				return fmt.Errorf("%s failed: %w", strings.Join(args, " "), err)
+			}
+			return nil
+		}
 	}
 	return fmt.Errorf("no usable audio player found (checked: %s)", strings.Join(checked, ", "))
 }
@@ -1455,8 +1809,40 @@ func resolveSSHUserAndHost(sshUser, dialHost string) (user, host string, err err
 	return user, host, nil
 }
 
+// writeStringFull writes all bytes of s to w. TCP writes may be partial; io.WriteString alone can drop data.
+func writeStringFull(w io.Writer, s string) error {
+	data := []byte(s)
+	for len(data) > 0 {
+		n, err := w.Write(data)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("short write")
+		}
+		data = data[n:]
+	}
+	return nil
+}
+
+// announceModemHangupAfterOnlineATH emits Hayes-style lines after an in-session ATH hangup.
+// Lead with a fresh line so terminals still in “data” mode can parse NO CARRIER after ANSI/binary.
+func announceModemHangupAfterOnlineATH(conn net.Conn, sessionID string) {
+	if err := writeStringFull(conn, "\r\n"); err != nil {
+		log.Printf("bridge[%s]: modem hangup prefix write failed: %v", sessionID, err)
+		return
+	}
+	for _, line := range []string{"NO CARRIER", "OK"} {
+		log.Printf("bridge[%s]: modem tx: %q", sessionID, line)
+		if err := writeStringFull(conn, line+"\r\n"); err != nil {
+			log.Printf("bridge[%s]: modem tx %q failed: %v", sessionID, line, err)
+			return
+		}
+	}
+}
+
 func writeModemResponse(conn net.Conn, msg string) {
-	if _, err := io.WriteString(conn, msg+"\r\n"); err != nil {
+	if err := writeStringFull(conn, msg+"\r\n"); err != nil {
 		log.Printf("bridge: write modem response %q failed: %v", msg, err)
 		return
 	}
@@ -1467,7 +1853,7 @@ func writeClearLines(conn net.Conn, lines int) {
 		return
 	}
 	for i := 0; i < lines; i++ {
-		if _, err := io.WriteString(conn, "\r\n"); err != nil {
+		if err := writeStringFull(conn, "\r\n"); err != nil {
 			log.Printf("bridge: write clear line failed at %d/%d: %v", i+1, lines, err)
 			return
 		}
