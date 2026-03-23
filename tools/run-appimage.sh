@@ -42,5 +42,12 @@ if [[ "${RUN_APPIMAGE_FORCE_DOSBOX_X:-0}" =~ ^(1|true|yes|on)$ ]]; then
 fi
 # NOTE: When you run the AppImage directly (no this script), USER_DATA_ROOT is unset
 # and launch.sh uses ~/.local/share/iyagi-terminal/ — a different .env than iyagi-data/.
+#
+# Bridge CONNECT debug logging: this wrapper sets IYAGI_BRIDGE_DEBUG_OVERRIDE=1 so launch.sh
+# forces BRIDGE_DEBUG=1 after reading .env (handy for dev). Direct AppImage runs do not set
+# this, so BRIDGE_DEBUG follows .env (default 0). To use .env only from this script:
+#   IYAGI_BRIDGE_DEBUG_OVERRIDE=0 ./tools/run-appimage.sh
+: "${IYAGI_BRIDGE_DEBUG_OVERRIDE:=1}"
+export IYAGI_BRIDGE_DEBUG_OVERRIDE
 
 exec "$APPIMAGE"

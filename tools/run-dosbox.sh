@@ -140,6 +140,13 @@ if [ ! -f "$ENV_FILE" ]; then
     echo "Created config: $ENV_FILE"
 fi
 
+# If caller already exported BRIDGE_DEBUG, keep it; otherwise this dev wrapper defaults to ON
+# after .env is loaded (direct AppImage / .env alone default to BRIDGE_DEBUG=0).
+_iyagi_bridge_debug_from_caller=0
+if [ -n "${BRIDGE_DEBUG+x}" ]; then
+    _iyagi_bridge_debug_from_caller=1
+fi
+
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 IYAGI_PREPARED_DIR="${IYAGI_PREPARED_DIR:-$(python3 "$REPO_ROOT/scripts/prepare_iyagi_source.py")}"
@@ -164,6 +171,9 @@ BRIDGE_DTMF_GAP_MS="${BRIDGE_DTMF_GAP_MS:-320}"
 BRIDGE_POST_DTMF_DELAY_MS="${BRIDGE_POST_DTMF_DELAY_MS:-500}"
 BRIDGE_DEBUG="${BRIDGE_DEBUG:-0}"
 BRIDGE_DEBUG_RENDER_SERVER="${BRIDGE_DEBUG_RENDER_SERVER:-0}"
+if [ "$_iyagi_bridge_debug_from_caller" = 0 ]; then
+    BRIDGE_DEBUG=1
+fi
 DOSBOX_VIDEO_BACKEND="${DOSBOX_VIDEO_BACKEND:-auto}"
 DOSBOX_WAYLAND_STRICT="${DOSBOX_WAYLAND_STRICT:-0}"
 DOSBOX_SCANLINES="${DOSBOX_SCANLINES:-1}"

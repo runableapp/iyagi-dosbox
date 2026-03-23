@@ -104,7 +104,7 @@ Local runtime config:
 - `BRIDGE_POST_DTMF_DELAY_MS`
 - `BRIDGE_CLIENT_ENCODING`, `BRIDGE_SERVER_ENCODING`
 - `BRIDGE_SERVER_REPAIR_MOJIBAKE`
-- `BRIDGE_DEBUG`
+- `BRIDGE_DEBUG` (`0` default in `.env.example`; set `1` only for troubleshooting). Dev scripts `tools/run-dosbox.sh` / `tools/run-appimage.sh` enable debug unless you pass `BRIDGE_DEBUG=0` or `IYAGI_BRIDGE_DEBUG_OVERRIDE=0` respectively.
 
 DOSBox timing/display:
 - `DOSBOX_CPU_CORE` (default `simple`)

@@ -64,7 +64,9 @@ func killActiveSoundPlayer() {
 
 // runPlayOrPreempt runs playFn in the background; if another command line arrives on cmdCh first,
 // playback is cancelled and the subprocess is killed.
-func runPlayOrPreempt(cmdCh <-chan atReadResult, playFn func(context.Context) error) (preempted bool, res atReadResult, playErr error) {
+// cmdCh must be fed by exactly one readATCommand goroutine; if play finishes first, conn's read
+// deadline is bumped so that goroutine unblocks and its result is drained (avoids a stuck reader).
+func runPlayOrPreempt(conn net.Conn, cmdCh <-chan atReadResult, playFn func(context.Context) error) (preempted bool, res atReadResult, playErr error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -77,6 +79,11 @@ func runPlayOrPreempt(cmdCh <-chan atReadResult, playFn func(context.Context) er
 		return true, res, nil
 	case playErr = <-done:
 		cancel()
+		killActiveSoundPlayer()
+		_ = conn.SetReadDeadline(time.Now())
+		drain := <-cmdCh
+		_ = conn.SetReadDeadline(time.Time{})
+		_ = drain
 		return false, atReadResult{}, playErr
 	}
 }
@@ -258,28 +265,16 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 		return echoEnabled
 	}
 
-	cmdCh := make(chan atReadResult, 8)
-	go func() {
-		for {
-			line, err := readATCommand(reader, conn, echoFn, sessionID)
-			cmdCh <- atReadResult{line: line, err: err}
-			if err != nil {
-				return
-			}
-		}
-	}()
-
 readLoop:
 	for {
-		res := <-cmdCh
-		if res.err != nil {
-			if res.err != io.EOF {
-				log.Printf("bridge[%s]: read command error: %v", sessionID, res.err)
+		line, err := readATCommand(reader, conn, echoFn, sessionID)
+		if err != nil {
+			if err != io.EOF {
+				log.Printf("bridge[%s]: read command error: %v", sessionID, err)
 			}
 			log.Printf("bridge[%s]: disconnected before CONNECT", sessionID)
 			return
 		}
-		line := res.line
 	dispatch:
 		cmd := strings.TrimSpace(line)
 		if cmd == "" {
@@ -328,7 +323,12 @@ readLoop:
 			// - ATD; / ATDT;    -> play dial tone, then OK (stay in command mode)
 			if rawTarget == ";" {
 				log.Printf("bridge[%s]: empty dial with ';' modifier -> dial tone (Enter cancels)", sessionID)
-				preempted, pre, playErr := runPlayOrPreempt(cmdCh, func(ctx context.Context) error {
+				preemptCh := make(chan atReadResult, 1)
+				go func() {
+					l, e := readATCommand(reader, conn, echoFn, sessionID)
+					preemptCh <- atReadResult{line: l, err: e}
+				}()
+				preempted, pre, playErr := runPlayOrPreempt(conn, preemptCh, func(ctx context.Context) error {
 					return playEmbeddedSoundCtx(ctx, "tone.wav")
 				})
 				if preempted {
@@ -354,7 +354,12 @@ readLoop:
 			}
 			if rawTarget == "" {
 				log.Printf("bridge[%s]: empty dial -> dial tone (Enter cancels -> NO CARRIER)", sessionID)
-				preempted, pre, playErr := runPlayOrPreempt(cmdCh, func(ctx context.Context) error {
+				preemptCh := make(chan atReadResult, 1)
+				go func() {
+					l, e := readATCommand(reader, conn, echoFn, sessionID)
+					preemptCh <- atReadResult{line: l, err: e}
+				}()
+				preempted, pre, playErr := runPlayOrPreempt(conn, preemptCh, func(ctx context.Context) error {
 					return playEmbeddedSoundCtx(ctx, "tone.wav")
 				})
 				if preempted {
@@ -418,6 +423,9 @@ readLoop:
 				}
 			}
 
+			// Use the same bufio.Reader as command mode so prefetched TCP bytes are not skipped.
+			// (Do not run readATCommand concurrently with CONNECT: it would steal keystrokes and
+			// leave cmdCh/state broken after disconnect.)
 			if err := runConnectedSession(conn, reader, sessionID, execPath, execArgs, true, debugEnabled, debugRenderServer, clientEncoding, serverEncoding, serverRepairMojibake, ansiResetHack, ansiColorCompatHack, ansiDefaultFG, ansiDefaultBG, ansiDefaultMode, nil, ctrlCHangup); err != nil {
 				if errors.Is(err, errCtrlCHangup) {
 					log.Printf("bridge[%s]: user hangup via Ctrl+C", sessionID)
