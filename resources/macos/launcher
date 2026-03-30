@@ -79,6 +79,7 @@ BRIDGE_DEBUG_RENDER_SERVER="${BRIDGE_DEBUG_RENDER_SERVER:-0}"
 if [[ "${IYAGI_BRIDGE_DEBUG_OVERRIDE:-0}" =~ ^(1|true|yes|on)$ ]]; then
     BRIDGE_DEBUG=1
 fi
+IYAGI_SYNC_CONFIG_ON_START="${IYAGI_SYNC_CONFIG_ON_START:-0}"
 DOSBOX_MODEM_LISTENPORT="${DOSBOX_MODEM_LISTENPORT:-auto}"
 DOSBOX_CPU_CORE="${DOSBOX_CPU_CORE:-simple}"
 DOSBOX_CPU_CPUTYPE="${DOSBOX_CPU_CPUTYPE:-386}"
@@ -197,6 +198,22 @@ sleep 1
 STAGING="$USER_DATA_ROOT/staging"
 mkdir -p "$STAGING"
 ensure_runtime_app_copy
+if [[ "${IYAGI_SYNC_CONFIG_ON_START,,}" =~ ^(1|true|yes|on)$ ]]; then
+    echo "Syncing IYAGI runtime config (I.CNF/I.TEL) from packaged defaults..."
+    for name in I.CNF I.TEL; do
+        src=""
+        if [ -f "$BUNDLED_APP_DIR/$name" ]; then
+            src="$BUNDLED_APP_DIR/$name"
+        elif [ -f "$BUNDLED_APP_DIR/IYAGI/$name" ]; then
+            src="$BUNDLED_APP_DIR/IYAGI/$name"
+        fi
+        if [ -n "$src" ]; then
+            cp -f "$src" "$RUNTIME_APP_DIR/$name"
+            mkdir -p "$RUNTIME_APP_DIR/IYAGI"
+            cp -f "$src" "$RUNTIME_APP_DIR/IYAGI/$name"
+        fi
+    done
+fi
 ln -sfn "$RUNTIME_APP_DIR" "$STAGING/app"
 ln -sfn "$DOWNLOADS_DIR" "$STAGING/downloads"
 if [ -d "$RESOURCES_DIR/glshaders" ]; then

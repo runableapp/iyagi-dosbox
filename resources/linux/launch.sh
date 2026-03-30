@@ -11,6 +11,12 @@
 #     .env, keys/, app/, downloads/, staging/
 # Override with USER_DATA_ROOT for portable/testing (e.g. repo iyagi-data/).
 #
+# Direct AppImage + default XDG data dir: if an iyagi-data/ directory sits next to the
+# .AppImage file (e.g. dist/IYAGI.AppImage and dist/iyagi-data/), its .env, optional
+# dosbox.conf, and app/I.CNF / app/I.TEL are copied into the XDG tree each launch so
+# behavior matches tools/run-appimage.sh without the wrapper. Disable with
+# IYAGI_NO_PORTABLE_DATA_SYNC=1 or by exporting USER_DATA_ROOT yourself.
+#
 # Package layout inside the AppImage ($APPDIR):
 #   usr/bin/dosbox   — DOSBox-Staging binary
 #   usr/bin/bridge   — TCP→SSH bridge binary
@@ -70,6 +76,12 @@ BRIDGE="$APPDIR/usr/bin/bridge"
 BUNDLED_APP_DIR="$APPDIR/app"
 DOSBOX_CONF="$APPDIR/dosbox.conf"
 
+# Captured before USER_DATA_ROOT may be set below (run-appimage.sh / manual export).
+USER_DATA_ROOT_WAS_SET_AT_START=0
+if [[ -v USER_DATA_ROOT ]]; then
+    USER_DATA_ROOT_WAS_SET_AT_START=1
+fi
+
 # User-writable data location:
 # - If USER_DATA_ROOT is provided, use it directly (portable/testing).
 # - AppImage default: single directory under XDG_DATA_HOME (same layout as iyagi-data/).
@@ -95,12 +107,38 @@ KEY_FILE="$KEYS_DIR/id_rsa"
 
 mkdir -p "$KEYS_DIR" "$DOWNLOADS_DIR"
 
+PORTABLE_IYAGI_DATA_DIR=""
+if [ -n "${APPIMAGE:-}" ] && [ "$USER_DATA_ROOT_WAS_SET_AT_START" = 0 ]; then
+    if [[ ! "${IYAGI_NO_PORTABLE_DATA_SYNC:-0}" =~ ^(1|true|yes|on)$ ]]; then
+        _apimg_resolved="$(readlink -f "$APPIMAGE" 2>/dev/null || true)"
+        if [ -n "$_apimg_resolved" ] && [ -f "$_apimg_resolved" ]; then
+            _portable_try="$(readlink -f "$(dirname "$_apimg_resolved")/iyagi-data" 2>/dev/null || true)"
+            if [ -n "$_portable_try" ] && [ -d "$_portable_try" ]; then
+                PORTABLE_IYAGI_DATA_DIR="$_portable_try"
+            fi
+        fi
+    fi
+fi
+
+if [ -n "$PORTABLE_IYAGI_DATA_DIR" ] && [ -f "$PORTABLE_IYAGI_DATA_DIR/.env" ]; then
+    mkdir -p "$USER_DATA_ROOT"
+    cp -f "$PORTABLE_IYAGI_DATA_DIR/.env" "$USER_DATA_ROOT/.env"
+    echo "Portable iyagi-data: synced .env from $PORTABLE_IYAGI_DATA_DIR -> $USER_DATA_ROOT/.env"
+fi
+
 if [ -n "${APPIMAGE:-}" ]; then
     echo "IYAGI user data directory: $USER_DATA_ROOT"
-    echo "  (tools/run-appimage.sh points here at <repo>/iyagi-data; direct AppImage launch uses XDG unless you export USER_DATA_ROOT)"
+    if [ -n "$PORTABLE_IYAGI_DATA_DIR" ]; then
+        echo "  (portable $PORTABLE_IYAGI_DATA_DIR -> XDG each launch; IYAGI_NO_PORTABLE_DATA_SYNC=1 to use only XDG templates)"
+    else
+        echo "  (tools/run-appimage.sh sets USER_DATA_ROOT to <repo>/iyagi-data; or place iyagi-data/ next to this AppImage to sync .env + app/I.CNF into XDG)"
+    fi
+    echo "  I.CNF path: $RUNTIME_APP_DIR/I.CNF — IYAGI_SYNC_CONFIG_ON_START=1 refreshes from bundle only."
 fi
 
 ensure_runtime_app_copy() {
+    # Default AppImage behavior: seed once, then keep runtime app/ writable and stable.
+    # This avoids overwriting user settings (e.g. I.CNF) on every launch.
     if [ -f "$RUNTIME_APP_DIR/I.EXE" ]; then
         return
     fi
@@ -108,6 +146,25 @@ ensure_runtime_app_copy() {
     rm -rf "$RUNTIME_APP_DIR"
     mkdir -p "$RUNTIME_APP_DIR"
     cp -a "$BUNDLED_APP_DIR/." "$RUNTIME_APP_DIR/"
+}
+
+sync_iyagi_runtime_config() {
+    # Optional: refresh selected config files from the packaged defaults.
+    # This intentionally does NOT overwrite the whole app/ directory, to avoid wiping user data.
+    # Bundle layout is flat ($APPDIR/app/I.CNF). IYAGI may also use app/IYAGI/ (legacy); mirror so both match.
+    for name in I.CNF I.TEL; do
+        src=""
+        if [ -f "$BUNDLED_APP_DIR/$name" ]; then
+            src="$BUNDLED_APP_DIR/$name"
+        elif [ -f "$BUNDLED_APP_DIR/IYAGI/$name" ]; then
+            src="$BUNDLED_APP_DIR/IYAGI/$name"
+        fi
+        if [ -n "$src" ]; then
+            cp -f "$src" "$RUNTIME_APP_DIR/$name"
+            mkdir -p "$RUNTIME_APP_DIR/IYAGI"
+            cp -f "$src" "$RUNTIME_APP_DIR/IYAGI/$name"
+        fi
+    done
 }
 
 
@@ -197,6 +254,8 @@ BRIDGE_ANSI_DEFAULT_BG="${BRIDGE_ANSI_DEFAULT_BG:-44}"
 BRIDGE_ANSI_DEFAULT_MODE="${BRIDGE_ANSI_DEFAULT_MODE:-sgr}"
 BRIDGE_DEBUG="${BRIDGE_DEBUG:-0}"
 BRIDGE_DEBUG_RENDER_SERVER="${BRIDGE_DEBUG_RENDER_SERVER:-0}"
+# Optional: refresh packaged I.CNF/I.TEL into runtime on each start (default off).
+IYAGI_SYNC_CONFIG_ON_START="${IYAGI_SYNC_CONFIG_ON_START:-0}"
 # tools/run-appimage.sh sets this so dev runs can force debug on after .env (default off).
 if [[ "${IYAGI_BRIDGE_DEBUG_OVERRIDE:-0}" =~ ^(1|true|yes|on)$ ]]; then
     BRIDGE_DEBUG=1
@@ -476,6 +535,20 @@ fi
 STAGING="$DATA_ROOT/staging"
 mkdir -p "$STAGING"
 ensure_runtime_app_copy
+if [[ "${IYAGI_SYNC_CONFIG_ON_START,,}" =~ ^(1|true|yes|on)$ ]]; then
+    echo "Syncing IYAGI runtime config (I.CNF/I.TEL) from packaged defaults..."
+    sync_iyagi_runtime_config
+fi
+if [ -n "${PORTABLE_IYAGI_DATA_DIR:-}" ]; then
+    for name in I.CNF I.TEL; do
+        if [ -f "$PORTABLE_IYAGI_DATA_DIR/app/$name" ]; then
+            mkdir -p "$RUNTIME_APP_DIR/IYAGI"
+            cp -f "$PORTABLE_IYAGI_DATA_DIR/app/$name" "$RUNTIME_APP_DIR/$name"
+            cp -f "$PORTABLE_IYAGI_DATA_DIR/app/$name" "$RUNTIME_APP_DIR/IYAGI/$name"
+            echo "Portable iyagi-data: synced app/$name -> $RUNTIME_APP_DIR/"
+        fi
+    done
+fi
 # Symlink writable app files into the staging area.
 ln -sfn "$RUNTIME_APP_DIR" "$STAGING/app"
 ln -sfn "$DOWNLOADS_DIR" "$STAGING/downloads"
@@ -485,6 +558,10 @@ fi
 # Always refresh dosbox.conf from the packaged version so updates take effect.
 # (Users should customize via .env, not by editing staging/dosbox.conf.)
 cp "$DOSBOX_CONF" "$STAGING/dosbox.conf"
+if [ -n "${PORTABLE_IYAGI_DATA_DIR:-}" ] && [ -f "$PORTABLE_IYAGI_DATA_DIR/dosbox.conf" ]; then
+    cp -f "$PORTABLE_IYAGI_DATA_DIR/dosbox.conf" "$STAGING/dosbox.conf"
+    echo "Portable iyagi-data: base dosbox.conf from $PORTABLE_IYAGI_DATA_DIR (bridge/CPU lines patched next)"
+fi
 
 # Route COM4 traffic to the local bridge (AT commands are parsed by bridge).
 python3 - "$STAGING/dosbox.conf" "$BRIDGE_PORT" "$DOSBOX_CPU_CORE" "$DOSBOX_CPU_CPUTYPE" "$DOSBOX_CPU_CYCLES_ARG_STAGING" "$DOSBOX_FRAMESKIP" <<'PYEOF'

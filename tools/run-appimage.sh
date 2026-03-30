@@ -40,8 +40,9 @@ if [[ "${RUN_APPIMAGE_FORCE_DOSBOX_X:-0}" =~ ^(1|true|yes|on)$ ]]; then
     export DOSBOX_SOURCE=system
     export DOSBOX_BIN="$DOSBOX_BIN_OVERRIDE"
 fi
-# NOTE: When you run the AppImage directly (no this script), USER_DATA_ROOT is unset
-# and launch.sh uses ~/.local/share/iyagi-terminal/ — a different .env than iyagi-data/.
+# NOTE: Direct AppImage still uses ~/.local/share/iyagi-terminal/ as USER_DATA_ROOT, but
+# launch.sh copies dirname(AppImage)/iyagi-data/.env and app/I.CNF into that tree when present
+# (same layout as dist/ + dist/iyagi-data/). Use IYAGI_NO_PORTABLE_DATA_SYNC=1 to skip.
 #
 # Bridge CONNECT debug logging: this wrapper sets IYAGI_BRIDGE_DEBUG_OVERRIDE=1 so launch.sh
 # forces BRIDGE_DEBUG=1 after reading .env (handy for dev). Direct AppImage runs do not set

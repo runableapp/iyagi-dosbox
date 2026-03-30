@@ -66,7 +66,7 @@ if not defined DOSBOX_CPU_CYCLES set "DOSBOX_CPU_CYCLES=2000"
 if not defined DOSBOX_FRAMESKIP set "DOSBOX_FRAMESKIP=1"
 for /f %%S in ('powershell -NoProfile -Command "$v='%DOSBOX_FRAMESKIP%'; if(($v -match '^[0-9]+$') -and ([int]$v -ge 0) -and ([int]$v -le 10)){$v}else{'1'}"') do set "DOSBOX_FRAMESKIP=%%S"
 if not defined DOSBOX_SCANLINES set "DOSBOX_SCANLINES=1"
-if not defined DOSBOX_GLSHADER set "DOSBOX_GLSHADER=crt/vga-1080p-fake-double-scan"
+if not defined DOSBOX_GLSHADER set "DOSBOX_GLSHADER=crt/vga-1080p"
 if not defined DOSBOX_SCANLINE_WINDOWRES set "DOSBOX_SCANLINE_WINDOWRES=1280x960"
 set "DOSBOX_WINDOWRES=1024x768"
 rem DOSBox-Staging cpu_cycles expects a plain number (e.g. 1000), not "fixed 1000".

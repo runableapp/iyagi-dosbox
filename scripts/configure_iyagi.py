@@ -47,6 +47,10 @@ ICNF_OLD_PATH = b"C:\\COMM\\TALK53\\DOWN"
 ICNF_NEW_PATH = b"D:\\"          # maps to downloads/ folder in DOSBox
 # Offsets accidentally forced by older patch logic; restore from .orig when present.
 ICNF_LEGACY_RESTORE_OFFSETS = (57, 61)
+# After the ASCII header, 0x1A ends the header; struct setting follows (STRUCT.DOC).
+# brate is the 3rd 16-bit field: 0=1200 … 7=115200 BPS.
+ICNF_HEADER_SENTINEL = 0x1A
+ICNF_DEFAULT_BRATE = 7  # 115200 BPS
 
 # I.TEL: header is 39 bytes (ends with 0x1A DOS EOF sentinel)
 ITEL_HEADER_SENTINEL = 0x1A
@@ -104,7 +108,17 @@ def patch_icnf(path: str) -> None:
         data[idx : idx + 58] = new_bytes
         path_updated = True
 
-    if not path_updated and legacy_restored == 0:
+    brate_updated = False
+    sent = data.find(bytes([ICNF_HEADER_SENTINEL]))
+    brate_lo = sent + 1 + 4
+    brate_hi = brate_lo + 2
+    if sent != -1 and brate_hi <= len(data):
+        prev = int.from_bytes(data[brate_lo:brate_hi], "little", signed=False)
+        if prev != ICNF_DEFAULT_BRATE:
+            data[brate_lo:brate_hi] = struct.pack("<H", ICNF_DEFAULT_BRATE)
+            brate_updated = True
+
+    if not path_updated and legacy_restored == 0 and not brate_updated:
         print("  [I.CNF] No updates needed -- skipping")
         return
 
@@ -119,6 +133,10 @@ def patch_icnf(path: str) -> None:
         print(
             f"  [I.CNF] Restored {legacy_restored} legacy-touched "
             f"offset{'s' if legacy_restored != 1 else ''} from .orig"
+        )
+    if brate_updated:
+        print(
+            f"  [I.CNF] Set default modem speed index to {ICNF_DEFAULT_BRATE} (115200 BPS)"
         )
 
 

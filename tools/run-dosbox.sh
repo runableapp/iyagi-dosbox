@@ -14,7 +14,6 @@ DOSBOX_BIN="$DOSBOX_UNPACKED_DIR/dosbox"
 USER_DATA_ROOT="${USER_DATA_ROOT:-$REPO_ROOT/iyagi-data}"
 RUN_DIR="$USER_DATA_ROOT/staging"
 APP_DIR="$USER_DATA_ROOT/app"
-IYAGI_DIR="$APP_DIR/IYAGI"
 DOWNLOADS_DIR="$USER_DATA_ROOT/downloads"
 KEYS_DIR="$USER_DATA_ROOT/keys"
 KEY_FILE="$KEYS_DIR/id_rsa"
@@ -238,13 +237,19 @@ echo "  DOSBOX_CPU_CYCLES=$DOSBOX_CPU_CYCLES"
 echo "  DOSBOX_CPU_CYCLES_SET=$DOSBOX_CPU_CYCLES_SET"
 echo "  DOSBOX_FRAMESKIP=$DOSBOX_FRAMESKIP"
 
-if [ ! -d "$IYAGI_DIR" ]; then
-    mkdir -p "$IYAGI_DIR"
-    cp -r "$IYAGI_PREPARED_DIR/." "$IYAGI_DIR/"
+# Flat app/ layout matches AppImage launch.sh (C:\ = user app/, I.CNF at C:\I.CNF).
+if [ ! -f "$APP_DIR/I.EXE" ]; then
+    mkdir -p "$APP_DIR"
+    if [ -f "$APP_DIR/IYAGI/I.EXE" ]; then
+        echo "Migrating legacy app/IYAGI/* into flat app/ (cross-launcher parity)..."
+        cp -a "$APP_DIR/IYAGI/." "$APP_DIR/"
+    else
+        cp -a "$IYAGI_PREPARED_DIR/." "$APP_DIR/"
+    fi
 fi
 if [[ "${IYAGI_SYNC_CONFIG_ON_START,,}" =~ ^(1|true|yes|on)$ ]]; then
     # Optional refresh from canonical defaults for reproducibility.
-    sync_iyagi_runtime_config "$IYAGI_PREPARED_DIR" "$IYAGI_DIR"
+    sync_iyagi_runtime_config "$IYAGI_PREPARED_DIR" "$APP_DIR"
 fi
 
 ensure_portable_dosbox
@@ -262,7 +267,7 @@ fi
 
 RUNTIME_CONF="$RUN_DIR/dosbox.runtime.conf"
 cp "$REPO_ROOT/resources/common/dosbox.conf" "$RUNTIME_CONF"
-ln -sfn "$IYAGI_DIR" "$RUN_DIR/app"
+ln -sfn "$APP_DIR" "$RUN_DIR/app"
 ln -sfn "$DOWNLOADS_DIR" "$RUN_DIR/downloads"
 
 python3 - "$RUNTIME_CONF" "$BRIDGE_PORT" "$DOSBOX_CPU_CORE" "$DOSBOX_CPU_CPUTYPE" "$DOSBOX_CPU_CYCLES_SET" "$DOSBOX_FRAMESKIP" <<'PY'

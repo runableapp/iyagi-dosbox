@@ -6,6 +6,17 @@
 #
 # Output: dist/IYAGI-linux-x86_64.AppImage
 #
+# Developer options:
+#   IYAGI_DEV_SYNC_CONFIG=1 bash tools/build-linux.sh
+#     After building, overwrite the runtime IYAGI config files (I.CNF, I.TEL)
+#     in USER_DATA_ROOT (or the AppImage default XDG dir if USER_DATA_ROOT is unset).
+#     This is for local development only; it intentionally overwrites user settings.
+#
+# Default dev workflow:
+#   - Treat iyagi-data/.env as the "tuning scratchpad"
+#   - Copy it into resources/common/.env.example BEFORE bundling (so the AppImage bakes it)
+#   - Copy it into the runtime user-data .env AFTER the build (so your next run matches)
+#
 # Prerequisites (all available without sudo on a stock Ubuntu runner):
 #   go       — to compile the bridge binary
 #   python3  — to run configure_iyagi.py
@@ -60,6 +71,18 @@ python3 -c "import PIL" >/dev/null 2>&1 || err "Python Pillow is required for ic
 IYAGI_PREPARED_DIR="${IYAGI_PREPARED_DIR:-$(python3 "$REPO_ROOT/scripts/prepare_iyagi_source.py")}"
 ok "Using canonical IYAGI source from $IYAGI_PREPARED_DIR"
 ok "All prerequisites met"
+
+# ─── Dev defaults: promote iyagi-data/.env to template ────────────────────────
+
+DEV_ENV_SRC="$REPO_ROOT/iyagi-data/.env"
+DEV_ENV_DST="$REPO_ROOT/resources/common/.env.example"
+if [ -f "$DEV_ENV_SRC" ]; then
+    log "Promoting $DEV_ENV_SRC -> $DEV_ENV_DST (dev default tuning)"
+    cp -f "$DEV_ENV_SRC" "$DEV_ENV_DST"
+    ok "Updated bundled .env template from iyagi-data/.env"
+else
+    ok "No $DEV_ENV_SRC found; using existing resources/common/.env.example"
+fi
 
 # ─── 2. Prepare build directory ──────────────────────────────────────────────
 
@@ -236,3 +259,24 @@ echo "For ATDT target mode, you can dial directly from IYAGI, e.g.:"
 echo "  ATDT127.0.0.1:40000"
 echo "IYAGI_USER is an optional default only."
 echo ""
+
+# ─── 10. Developer-only: sync defaults into runtime dir ──────────────────────
+
+if [[ "${IYAGI_DEV_SYNC_CONFIG:-0}" =~ ^(1|true|yes|on)$ ]]; then
+    TARGET_ROOT="${USER_DATA_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/iyagi-terminal}"
+    TARGET_APP="$TARGET_ROOT/app"
+    log "Developer sync: overwriting runtime I.CNF/I.TEL in $TARGET_APP (and app/IYAGI mirror)"
+    mkdir -p "$TARGET_APP/IYAGI"
+    for name in I.CNF I.TEL; do
+        cp -f "$REPO_ROOT/app/IYAGI/$name" "$TARGET_APP/$name"
+        cp -f "$REPO_ROOT/app/IYAGI/$name" "$TARGET_APP/IYAGI/$name"
+    done
+    ok "Synced runtime config files"
+fi
+
+TARGET_ROOT="${USER_DATA_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/iyagi-terminal}"
+TARGET_ENV="$TARGET_ROOT/.env"
+log "Developer sync: overwriting runtime .env at $TARGET_ENV"
+mkdir -p "$TARGET_ROOT"
+cp -f "$REPO_ROOT/resources/common/.env.example" "$TARGET_ENV"
+ok "Synced runtime .env"
