@@ -137,6 +137,10 @@ func runPlayOrPreempt(conn net.Conn, cmdCh <-chan atReadResult, playFn func(cont
 //                        (default: 320)
 //   BRIDGE_POST_DTMF_DELAY_MS - pause after DTMF sequence before connection
 //                               result signaling (default: 500)
+//   BRIDGE_SSH_ANNOUNCE_IYAGI - when true (default), and the outbound client is
+//                               OpenSSH ssh(1), prepend -o SetEnv=IYAGI=1 so the
+//                               remote session receives IYAGI=1 before the shell
+//                               (gliderlabs/ssh and similar servers). Set to 0 to disable.
 //
 // On Linux/macOS BRIDGE_CMD_TEMPLATE can use the system ssh binary.
 // On Windows, set BRIDGE_CMD_TEMPLATE to use the bundled plink.exe, e.g.:
@@ -152,6 +156,7 @@ func main() {
 	sshUser := getenv("BRIDGE_SSH_USER", "bbs")
 	debugEnabled := parseBoolEnv(getenv("BRIDGE_DEBUG", "0"))
 	debugRenderServer := parseBoolEnv(getenv("BRIDGE_DEBUG_RENDER_SERVER", "0"))
+	sshAnnounceIYAGI := parseBoolEnv(getenv("BRIDGE_SSH_ANNOUNCE_IYAGI", "1"))
 	clientEncoding := strings.ToLower(strings.TrimSpace(getenv("BRIDGE_CLIENT_ENCODING", "off")))
 	serverEncoding := strings.ToLower(strings.TrimSpace(getenv("BRIDGE_SERVER_ENCODING", "off")))
 	serverRepairMojibake := parseBoolEnv(getenv("BRIDGE_SERVER_REPAIR_MOJIBAKE", "1"))
@@ -208,6 +213,9 @@ func main() {
 	if sshUser != "" {
 		log.Printf("bridge: ssh user: %s", sshUser)
 	}
+	if !sshAnnounceIYAGI {
+		log.Printf("bridge: OpenSSH SetEnv IYAGI=1 disabled (BRIDGE_SSH_ANNOUNCE_IYAGI=0)")
+	}
 	if debugEnabled {
 		log.Printf("bridge: debug stream logging enabled (BRIDGE_DEBUG)")
 	}
@@ -236,11 +244,11 @@ func main() {
 			continue
 		}
 		log.Printf("bridge: accepted connection from %s", conn.RemoteAddr())
-		go handle(conn, legacyCmd, cmdTemplate, sshUser, debugEnabled, debugRenderServer, clientEncoding, serverEncoding, serverRepairMojibake, ansiResetHack, ansiColorCompatHack, ansiDefaultFG, ansiDefaultBG, ansiDefaultMode, connectTimeout, busyRepeat, busyGapMs, ctrlCHangup, dtmfGapMs, postDtmfDelayMs)
+		go handle(conn, legacyCmd, cmdTemplate, sshUser, sshAnnounceIYAGI, debugEnabled, debugRenderServer, clientEncoding, serverEncoding, serverRepairMojibake, ansiResetHack, ansiColorCompatHack, ansiDefaultFG, ansiDefaultBG, ansiDefaultMode, connectTimeout, busyRepeat, busyGapMs, ctrlCHangup, dtmfGapMs, postDtmfDelayMs)
 	}
 }
 
-func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled bool, debugRenderServer bool, clientEncoding, serverEncoding string, serverRepairMojibake bool, ansiResetHack bool, ansiColorCompatHack bool, ansiDefaultFG int, ansiDefaultBG int, ansiDefaultMode string, connectTimeout time.Duration, busyRepeat int, busyGapMs int, ctrlCHangup bool, dtmfGapMs int, postDtmfDelayMs int) {
+func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, sshAnnounceIYAGI bool, debugEnabled bool, debugRenderServer bool, clientEncoding, serverEncoding string, serverRepairMojibake bool, ansiResetHack bool, ansiColorCompatHack bool, ansiDefaultFG int, ansiDefaultBG int, ansiDefaultMode string, connectTimeout time.Duration, busyRepeat int, busyGapMs int, ctrlCHangup bool, dtmfGapMs int, postDtmfDelayMs int) {
 	defer conn.Close()
 	sessionID := conn.RemoteAddr().String()
 	if legacyCmd != "" {
@@ -249,8 +257,10 @@ func handle(conn net.Conn, legacyCmd, cmdTemplate, sshUser string, debugEnabled 
 			log.Printf("bridge[%s]: BRIDGE_CMD is empty", sessionID)
 			return
 		}
-		log.Printf("bridge[%s]: legacy connect via %s %s", sessionID, parts[0], strings.Join(parts[1:], " "))
-		if err := runConnectedSession(conn, conn, sessionID, parts[0], parts[1:], false, debugEnabled, debugRenderServer, clientEncoding, serverEncoding, serverRepairMojibake, ansiResetHack, ansiColorCompatHack, ansiDefaultFG, ansiDefaultBG, ansiDefaultMode, nil, ctrlCHangup); err != nil {
+		execPath := parts[0]
+		execArgs := maybeAppendOpenSSHSetEnvIYAGI(execPath, parts[1:], sshAnnounceIYAGI)
+		log.Printf("bridge[%s]: legacy connect via %s %s", sessionID, execPath, strings.Join(execArgs, " "))
+		if err := runConnectedSession(conn, conn, sessionID, execPath, execArgs, false, debugEnabled, debugRenderServer, clientEncoding, serverEncoding, serverRepairMojibake, ansiResetHack, ansiColorCompatHack, ansiDefaultFG, ansiDefaultBG, ansiDefaultMode, nil, ctrlCHangup); err != nil {
 			log.Printf("bridge[%s]: legacy session failed: %v", sessionID, err)
 		}
 		return
@@ -402,6 +412,7 @@ readLoop:
 				writeModemResponse(conn, "ERROR")
 				continue
 			}
+			execArgs = maybeAppendOpenSSHSetEnvIYAGI(execPath, execArgs, sshAnnounceIYAGI)
 			logOutboundDialDebug(sessionID, effectiveSSHUser, host, port, execPath, execArgs)
 			if fastDial {
 				log.Printf("bridge[%s]: fast-dial SSH target %s:%s via %s %s (skip sounds)", sessionID, host, port, execPath, strings.Join(execArgs, " "))
@@ -1761,6 +1772,35 @@ func buildOutboundCommand(template, sshUser, host, port string) (string, []strin
 		return "", nil, fmt.Errorf("empty BRIDGE_CMD_TEMPLATE after substitution")
 	}
 	return parts[0], parts[1:], nil
+}
+
+// maybeAppendOpenSSHSetEnvIYAGI prepends OpenSSH options so the server receives IYAGI=1
+// via the SSH env channel before the shell starts (equivalent to golang.org/x/crypto/ssh Session.Setenv).
+// Only applies when execPath is the OpenSSH ssh client; skipped if the argv already sets IYAGI.
+func maybeAppendOpenSSHSetEnvIYAGI(execPath string, args []string, enabled bool) []string {
+	if !enabled {
+		return args
+	}
+	base := filepath.Base(execPath)
+	if base != "ssh" && !strings.EqualFold(base, "ssh.exe") {
+		return args
+	}
+	if openSSHArgsAlreadySetIYAGI(args) {
+		return args
+	}
+	return append([]string{"-o", "SetEnv=IYAGI=1"}, args...)
+}
+
+func openSSHArgsAlreadySetIYAGI(args []string) bool {
+	for i := 0; i < len(args); i++ {
+		if strings.HasPrefix(args[i], "SetEnv=IYAGI=") {
+			return true
+		}
+		if args[i] == "-o" && i+1 < len(args) && strings.HasPrefix(args[i+1], "SetEnv=IYAGI=") {
+			return true
+		}
+	}
+	return false
 }
 
 func logOutboundDialDebug(sessionID, sshUser, host, port, execPath string, execArgs []string) {
