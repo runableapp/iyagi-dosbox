@@ -31,6 +31,7 @@ const I18N = {
     aboutP3:
       "필요한 건 하나뿐입니다. 다운로드해서 간단히 설치하고 실행만 하면, 금세 그 시절로 돌아가 다시 즐길 수 있습니다.",
     introVideoCredit: "<영화 '접속', 1997년>",
+    introVideoReplay: "영화 다시 보기",
     howTitle: "▣ 어떻게 동작하나요?",
     flowDiagramAria: "동작 흐름 다이어그램",
     flowNodeIyagi: "이야기",
@@ -103,6 +104,7 @@ const I18N = {
     aboutP3:
       "Just download, install, and run. You can jump back to that era in minutes.",
     introVideoCredit: "<Movie \"The Contact\", 1997>",
+    introVideoReplay: "Watch on Viki",
     howTitle: "▣ How does it work?",
     flowDiagramAria: "Connection flow diagram",
     flowNodeIyagi: "IYAGI",
@@ -174,6 +176,7 @@ const I18N = {
       "听到那时的连接音、看到熟悉画面，心跳是不是会加快？Iyagi DOSBox 让你在 Windows / macOS / Linux 上再次体验那份回忆。",
     aboutP3: "只要下载、简单安装并运行，就能很快回到那个时代。",
     introVideoCredit: "<电影《接触》, 1997>",
+    introVideoReplay: "在线观看 (Viki)",
     howTitle: "▣ 工作原理",
     flowDiagramAria: "连接流程图",
     flowNodeIyagi: "IYAGI",
@@ -246,6 +249,7 @@ const I18N = {
     aboutP3:
       "必要なのはひとつだけ。ダウンロードして簡単にインストールし、実行するだけです。",
     introVideoCredit: "<映画『接続』, 1997>",
+    introVideoReplay: "Vikiで視聴",
     howTitle: "▣ 仕組み",
     flowDiagramAria: "接続フロー図",
     flowNodeIyagi: "IYAGI",
@@ -343,6 +347,7 @@ function applyLanguage(lang) {
   setText("aboutP2", locale.aboutP2);
   setText("aboutP3", locale.aboutP3);
   setText("introVideoCredit", locale.introVideoCredit);
+  setText("introVideoReplay", locale.introVideoReplay);
 
   setText("howTitle", locale.howTitle);
   setAttr("flowDiagram", "aria-label", locale.flowDiagramAria);
