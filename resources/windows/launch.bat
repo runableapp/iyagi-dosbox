@@ -61,6 +61,9 @@ if /I "%IYAGI_BRIDGE_DEBUG_OVERRIDE%"=="1" set "BRIDGE_DEBUG=1"
 if /I "%IYAGI_BRIDGE_DEBUG_OVERRIDE%"=="true" set "BRIDGE_DEBUG=1"
 if /I "%IYAGI_BRIDGE_DEBUG_OVERRIDE%"=="yes" set "BRIDGE_DEBUG=1"
 if /I "%IYAGI_BRIDGE_DEBUG_OVERRIDE%"=="on" set "BRIDGE_DEBUG=1"
+rem IYAGI_DEBUG_LOG: optional (uncomment the block at bridge start to log to file)
+rem if not defined IYAGI_DEBUG_LOG set "IYAGI_DEBUG_LOG=0"
+rem if not defined IYAGI_DEBUG_LOG_FILE set "IYAGI_DEBUG_LOG_FILE="
 if not defined DOSBOX_CPU_CORE set "DOSBOX_CPU_CORE=simple"
 if not defined DOSBOX_CPU_CPUTYPE set "DOSBOX_CPU_CPUTYPE=386"
 if not defined DOSBOX_CPU_CYCLES set "DOSBOX_CPU_CYCLES=2000"
@@ -144,7 +147,27 @@ set "BRIDGE_ANSI_DEFAULT_MODE=%BRIDGE_ANSI_DEFAULT_MODE%"
 set "BRIDGE_DEBUG=%BRIDGE_DEBUG%"
 set "BRIDGE_DEBUG_RENDER_SERVER=%BRIDGE_DEBUG_RENDER_SERVER%"
 set "BRIDGE_SSH_ANNOUNCE_IYAGI=%BRIDGE_SSH_ANNOUNCE_IYAGI%"
-start "IYAGI Bridge" /b "%BRIDGE%"
+
+rem set "BRIDGE_LOG_PATH="
+rem if /I "%IYAGI_DEBUG_LOG%"=="1" set "IYAGI_DEBUG_LOG=1"
+rem if /I "%IYAGI_DEBUG_LOG%"=="true" set "IYAGI_DEBUG_LOG=1"
+rem if /I "%IYAGI_DEBUG_LOG%"=="yes" set "IYAGI_DEBUG_LOG=1"
+rem if /I "%IYAGI_DEBUG_LOG%"=="on" set "IYAGI_DEBUG_LOG=1"
+rem if "%IYAGI_DEBUG_LOG%"=="1" (
+rem     if not exist "%PKG%logs\" mkdir "%PKG%logs"
+rem     if defined IYAGI_DEBUG_LOG_FILE (
+rem         set "BRIDGE_LOG_PATH=%IYAGI_DEBUG_LOG_FILE%"
+rem     ) else (
+rem         for /f %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "BRIDGE_LOG_TS=%%T"
+rem         set "BRIDGE_LOG_PATH=%PKG%logs\bridge-%BRIDGE_LOG_TS%.log"
+rem     )
+rem     echo Bridge debug log: %BRIDGE_LOG_PATH%
+rem )
+rem if defined BRIDGE_LOG_PATH (
+rem     start "IYAGI Bridge" /b cmd /c "\"%BRIDGE%\" >> \"%BRIDGE_LOG_PATH%\" 2>&1"
+rem ) else (
+    start "IYAGI Bridge" /b "%BRIDGE%"
+rem )
 
 timeout /t 2 >nul
 

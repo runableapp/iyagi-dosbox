@@ -147,6 +147,9 @@ func runPlayOrPreempt(conn net.Conn, cmdCh <-chan atReadResult, playFn func(cont
 //   BRIDGE_CMD_TEMPLATE=C:\path\to\plink.exe -t -P {port} {userhost}
 
 func main() {
+	// Debug: microsecond log timestamps (enable when correlating "typed vs echoed" timing)
+	// log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
+
 	port := getenv("BRIDGE_PORT", "2323")
 	legacyCmd := strings.TrimSpace(getenv("BRIDGE_CMD", ""))
 	cmdTemplate := getenv(
@@ -635,7 +638,6 @@ func copyClientStreamWithDisconnect(dst io.Writer, src io.Reader, modemConn net.
 	pendingPluses := make([]byte, 0, 3)
 	inCommandMode := false
 	cmdBuf := make([]byte, 0, 128)
-	var hangFSM onlineHangupFSM
 
 	flushPendingPluses := func() error {
 		if len(pendingPluses) == 0 {
@@ -726,9 +728,6 @@ func copyClientStreamWithDisconnect(dst io.Writer, src io.Reader, modemConn net.
 				if len(pendingPluses) == 3 && now.Sub(lastByteAt) >= escapeGuard {
 					// Guard-time after "+++" passed: enter online command mode.
 					pendingPluses = pendingPluses[:0]
-					if err := hangFSM.flushToDst(dst); err != nil {
-						return err
-					}
 					inCommandMode = true
 					if cmdErr := processCommandByte(b); cmdErr != nil {
 						return cmdErr
@@ -741,17 +740,11 @@ func copyClientStreamWithDisconnect(dst io.Writer, src io.Reader, modemConn net.
 					if len(pendingPluses) == 0 {
 						// Guard-time before escape sequence.
 						if !lastByteAt.IsZero() && now.Sub(lastByteAt) < escapeGuard {
-							if err := hangFSM.flushToDst(dst); err != nil {
-								return err
-							}
 							if _, werr := dst.Write([]byte{b}); werr != nil {
 								return werr
 							}
 							lastByteAt = now
 							continue
-						}
-						if err := hangFSM.flushToDst(dst); err != nil {
-							return err
 						}
 						pendingPluses = append(pendingPluses, b)
 						lastByteAt = now
@@ -765,30 +758,21 @@ func copyClientStreamWithDisconnect(dst io.Writer, src io.Reader, modemConn net.
 				}
 
 				if len(pendingPluses) > 0 {
-					if err := hangFSM.flushToDst(dst); err != nil {
-						return err
-					}
 					if err := flushPendingPluses(); err != nil {
 						return err
 					}
 				}
 
 				if b == 0x03 && ctrlCHangup {
-					if err := hangFSM.flushToDst(dst); err != nil {
-						return err
-					}
 					return errCtrlCHangup
 				}
-				if err := hangFSM.feedPassthroughByte(dst, b, sessionID); err != nil {
-					return err
+				if _, werr := dst.Write([]byte{b}); werr != nil {
+					return werr
 				}
 				lastByteAt = now
 			}
 		}
 		if err != nil {
-			if ferr := hangFSM.flushToDst(dst); ferr != nil {
-				return ferr
-			}
 			if len(pendingPluses) > 0 {
 				if ferr := flushPendingPluses(); ferr != nil {
 					return ferr
@@ -1034,165 +1018,10 @@ func normalizeHayesCommand(s string) string {
 	return strings.ToUpper(strings.TrimSpace(b.String()))
 }
 
-// isInlineATHHangup is true for Hayes hang-up lines sent in CONNECT/data mode
-// (e.g. IYAGI "hang up modem" without +++ escape).
-func isInlineATHHangup(norm string) bool {
-	switch norm {
-	case "ATH", "ATH0", "ATH1":
-		return true
-	default:
-		return false
-	}
-}
-
-// onlineHangupFSM detects ATH / ATH0 / ATH1 terminated by CR/LF while piping
-// client bytes to SSH, without buffering normal typing (only holds bytes after 'A').
-// plusRun holds a run of '+' (e.g. before "ATH" in "+ + + + + + ATH\r" on one line).
-type onlineHangupFSM struct {
-	acc     []byte
-	plusRun []byte
-}
-
-func (f *onlineHangupFSM) flushToDst(dst io.Writer) error {
-	if f == nil {
-		return nil
-	}
-	if len(f.plusRun) > 0 {
-		_, err := dst.Write(f.plusRun)
-		f.plusRun = nil
-		if err != nil {
-			return err
-		}
-	}
-	if len(f.acc) == 0 {
-		return nil
-	}
-	_, err := dst.Write(f.acc)
-	f.acc = nil
-	return err
-}
-
-const maxInlineATHAccum = 32
-
-// feedPassthroughByte writes b to dst or accumulates a possible inline ATH… command.
-func (f *onlineHangupFSM) feedPassthroughByte(dst io.Writer, b byte, sessionID string) error {
-	const maxPlusRun = 24
-	if f.acc == nil {
-		// CONNECT stream: "+…+ATH" without a prior +++ escape (IYAGI-style).
-		if len(f.plusRun) > 0 || b == '+' {
-			if b == '+' {
-				if len(f.plusRun) < maxPlusRun {
-					f.plusRun = append(f.plusRun, b)
-					return nil
-				}
-				if _, err := dst.Write(f.plusRun); err != nil {
-					return err
-				}
-				f.plusRun = nil
-				return f.feedPassthroughByte(dst, b, sessionID)
-			}
-			if len(f.plusRun) > 0 {
-				if b == 'A' || b == 'a' {
-					f.plusRun = nil
-					f.acc = []byte{b}
-					return nil
-				}
-				if _, err := dst.Write(f.plusRun); err != nil {
-					return err
-				}
-				f.plusRun = nil
-				return f.feedPassthroughByte(dst, b, sessionID)
-			}
-		}
-		if b == 'A' || b == 'a' {
-			f.acc = []byte{b}
-			return nil
-		}
-		_, err := dst.Write([]byte{b})
-		return err
-	}
-	if len(f.acc) >= maxInlineATHAccum {
-		if err := f.flushToDst(dst); err != nil {
-			return err
-		}
-		return f.feedPassthroughByte(dst, b, sessionID)
-	}
-
-	switch len(f.acc) {
-	case 1:
-		if b == '\r' || b == '\n' {
-			if err := f.flushToDst(dst); err != nil {
-				return err
-			}
-			_, err := dst.Write([]byte{b})
-			return err
-		}
-		if b == 'T' || b == 't' {
-			f.acc = append(f.acc, b)
-			return nil
-		}
-		if err := f.flushToDst(dst); err != nil {
-			return err
-		}
-		return f.feedPassthroughByte(dst, b, sessionID)
-	case 2:
-		if b == '\r' || b == '\n' {
-			if err := f.flushToDst(dst); err != nil {
-				return err
-			}
-			_, err := dst.Write([]byte{b})
-			return err
-		}
-		if b == 'H' || b == 'h' {
-			f.acc = append(f.acc, b)
-			return nil
-		}
-		if err := f.flushToDst(dst); err != nil {
-			return err
-		}
-		return f.feedPassthroughByte(dst, b, sessionID)
-	case 3:
-		if b == '\r' || b == '\n' {
-			norm := normalizeHayesCommand(string(f.acc))
-			if isInlineATHHangup(norm) {
-				log.Printf("bridge[%s]: online hangup via inline %q (norm %q)", sessionID, string(f.acc), norm)
-				f.acc = nil
-				return errATHHangup
-			}
-			if err := f.flushToDst(dst); err != nil {
-				return err
-			}
-			_, err := dst.Write([]byte{b})
-			return err
-		}
-		if b == '0' || b == '1' {
-			f.acc = append(f.acc, b)
-			return nil
-		}
-		if err := f.flushToDst(dst); err != nil {
-			return err
-		}
-		return f.feedPassthroughByte(dst, b, sessionID)
-	default:
-		if b == '\r' || b == '\n' {
-			norm := normalizeHayesCommand(string(f.acc))
-			if isInlineATHHangup(norm) {
-				log.Printf("bridge[%s]: online hangup via inline %q (norm %q)", sessionID, string(f.acc), norm)
-				f.acc = nil
-				return errATHHangup
-			}
-			if err := f.flushToDst(dst); err != nil {
-				return err
-			}
-			_, err := dst.Write([]byte{b})
-			return err
-		}
-		if err := f.flushToDst(dst); err != nil {
-			return err
-		}
-		return f.feedPassthroughByte(dst, b, sessionID)
-	}
-}
+// In CONNECT (after SSH is up), the byte stream to the remote is transparent, like
+// a modem in data mode: the bridge does not interpret AT* in that path. For hangup
+// the client should use the Hayes escape: +++ (with guard), then processCommandByte
+// in online command mode handles "ATH" (see copyClientStreamWithDisconnect).
 
 func isLikelyHayesInitCommand(cmd string) bool {
 	if !strings.HasPrefix(cmd, "AT") || len(cmd) <= 2 {
